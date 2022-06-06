@@ -25,13 +25,22 @@ probe::probe(ss::httpd::path_description& path_desc)
     namespace sm = ss::metrics;
     std::vector<sm::label_instance> labels{
       sm::label("operation")(path_desc.operations.nickname)};
+
+    auto aggregate_labels = std::vector<std::string>{
+      sm::shard_label.name(), "operation"};
+    auto internal_aggregate_labels
+      = config::shard_local_cfg().aggregate_metrics()
+          ? aggregate_labels
+          : std::vector<std::string>{};
+
     _metrics.add_group(
       "pandaproxy",
       {sm::make_histogram(
         "request_latency",
         sm::description("Request latency"),
-        std::move(labels),
-        [this] { return _request_hist.seastar_histogram_logform(); })});
+        labels,
+        [this] { return _request_hist.seastar_histogram_logform(); },
+        internal_aggregate_labels)});
 }
 
 } // namespace pandaproxy
