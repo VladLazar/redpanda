@@ -11,6 +11,7 @@
 
 #pragma once
 
+#include "cluster/controller_probe.h"
 #include "cluster/controller_stm.h"
 #include "cluster/fwd.h"
 #include "cluster/scheduling/leader_balancer.h"
@@ -154,6 +155,7 @@ private:
     ss::sharded<feature_table> _feature_table;     // instance per core
     std::unique_ptr<leader_balancer> _leader_balancer;
     consensus_ptr _raft0;
+    controller_probe _probe;
 };
 
 } // namespace cluster

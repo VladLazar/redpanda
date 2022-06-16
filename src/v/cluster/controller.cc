@@ -67,7 +67,10 @@ controller::controller(
   , _tp_updates_dispatcher(_partition_allocator, _tp_state, _partition_leaders)
   , _security_manager(_credentials, _authorizer)
   , _data_policy_manager(data_policy_table)
-  , _raft_manager(raft_manager) {}
+  , _raft_manager(raft_manager)
+  , _probe(*this) {
+    _probe.setup_metrics();
+  }
 
 ss::future<> controller::wire_up() {
     return _as.start()
