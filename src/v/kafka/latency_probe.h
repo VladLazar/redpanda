@@ -46,6 +46,23 @@ public:
              labels,
              [this] { return _produce_latency.seastar_histogram_logform(); },
              aggregate_labels)});
+
+        _metrics.add_group(
+          prometheus_sanitize::metrics_name("kafka"),
+          {sm::make_histogram(
+            "request_latency_seconds",
+            sm::description("Internal latency of client request"),
+            {sm::label("request")("produce")},
+            [this] { return _produce_latency.seastar_histogram_logform(18, 1000, 2.0, 1000000); },
+            {sm::shard_label.name()}),
+           sm::make_histogram(
+            "request_latency_seconds",
+            sm::description("Internal latency of client request"),
+            {sm::label("request")("consume")},
+            [this] { return _produce_latency.seastar_histogram_logform(18, 1000, 2.0, 1000000); },
+            {sm::shard_label.name()}),
+          },
+          sm::impl::default_handle() + 1);
     }
 
     std::unique_ptr<hdr_hist::measurement> auto_produce_measurement() {

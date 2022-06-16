@@ -29,6 +29,7 @@ void replicated_partition_probe::setup_metrics(const model::ntp& ntp) {
         return;
     }
 
+    auto request_label = sm::label("request");
     auto ns_label = sm::label("namespace");
     auto topic_label = sm::label("topic");
     auto partition_label = sm::label("partition");
@@ -41,6 +42,94 @@ void replicated_partition_probe::setup_metrics(const model::ntp& ntp) {
       topic_label(ntp.tp.topic()),
       partition_label(ntp.tp.partition()),
     };
+
+    _metrics.add_group(
+      prometheus_sanitize::metrics_name("kafka"),
+      {
+        // Partition Level Metrics
+        sm::make_gauge(
+          "max_offset",
+          [this] { 
+            auto log_offset = _partition.committed_offset();
+            auto translator = _partition.get_offset_translator_state();
+
+            return translator->from_log_offset(log_offset);
+          },
+          sm::description("Partition max offset"),
+          labels,
+          aggregate_labels),
+        sm::make_gauge(
+          "under_replicated_replicas",
+          [this] {
+              auto metrics = _partition._raft->get_follower_metrics();
+              return std::count_if(
+                metrics.cbegin(),
+                metrics.cend(),
+                [](const raft::follower_metrics& fm) {
+                    return fm.under_replicated;
+                });
+          },
+          sm::description("Number of under replicated replicas"),
+          labels,
+          aggregate_labels),
+        // Topic Level Metrics
+        sm::make_total_bytes(
+          "request_bytes_total",
+          [this] { return _bytes_produced; },
+          sm::description("Total number of bytes produced per topic"),
+          {request_label("produce"),
+           ns_label(ntp.ns()),
+           topic_label(ntp.tp.topic())},
+          sm::impl::shard(),
+          {sm::shard_label.name(), partition_label.name()}),
+        sm::make_total_bytes(
+          "request_bytes_total",
+          [this] { return _bytes_fetched; },
+          sm::description("Total number of bytes consumed per topic"),
+          {request_label("consume"),
+           ns_label(ntp.ns()),
+           topic_label(ntp.tp.topic())},
+          sm::impl::shard(),
+          {sm::shard_label.name(), partition_label.name()}),
+        sm::make_gauge(
+          "replicas",
+          [this] {
+              auto metrics = _partition._raft->get_follower_metrics();
+              return metrics.size();
+          },
+          sm::description("Number of replicas"),
+          {ns_label(ntp.ns()), topic_label(ntp.tp.topic())},
+          {sm::shard_label.name(), partition_label.name()}),
+        //sm::make_gauge(
+        //  "partitions",
+        //  [this] {
+        //      auto metrics = _partition._raft->get_follower_metrics();
+        //      return metrics.size();
+        //  },
+        //  sm::description("Number of partitions"),
+        //  {ns_label(ntp.ns()), topic_label(ntp.tp.topic())},
+        //  {sm::shard_label.name(), partition_label.name()}),
+        // Broker Level Metrics
+        sm::make_total_bytes(
+          "request_bytes_per_broker",
+          [this] { return _bytes_produced; },
+          sm::description("Total number of bytes produced"),
+          {request_label("produce"),
+           ns_label(ntp.ns()),
+           topic_label(ntp.tp.topic())},
+          sm::impl::shard(),
+          {sm::shard_label.name(), partition_label.name(), topic_label.name(), ns_label.name()}),
+        sm::make_total_bytes(
+          "request_bytes_total_per_broker",
+          [this] { return _bytes_fetched; },
+          sm::description("Total number of bytes consumed"),
+          {request_label("consume"),
+           ns_label(ntp.ns()),
+           topic_label(ntp.tp.topic())},
+          sm::impl::shard(),
+          {sm::shard_label.name(), partition_label.name(), topic_label.name(), ns_label.name()}),
+      },
+      sm::impl::default_handle() + 1);
 
     _metrics.add_group(
       prometheus_sanitize::metrics_name("cluster:partition"),
