@@ -13,6 +13,7 @@
 
 #include "config/configuration.h"
 #include "prometheus/prometheus_sanitize.h"
+#include "ssx/metrics.h"
 #include "utils/hdr_hist.h"
 
 #include <seastar/core/metrics.hh>
@@ -40,6 +41,27 @@ public:
              sm::description("Produce Latency"),
              labels,
              [this] { return _produce_latency.seastar_histogram_logform(); })});
+
+        _public_metrics.add_group(
+          prometheus_sanitize::metrics_name("kafka"),
+          {
+            sm::make_histogram(
+              "request_latency_seconds",
+              sm::description("Internal latency of kafka client produce "
+                              "requests for the broker"),
+              {sm::label("request")("produce")},
+              [this] {
+                  return ssx::report_default_histogram(_produce_latency);
+              })
+              .aggregate({sm::shard_label}),
+            sm::make_histogram(
+              "request_latency_seconds",
+              sm::description("Internal latency of kafka client consume "
+                              "requests for the broker"),
+              {sm::label("request")("consume")},
+              [this] { return ssx::report_default_histogram(_fetch_latency); })
+              .aggregate({sm::shard_label}),
+          });
     }
 
     std::unique_ptr<hdr_hist::measurement> auto_produce_measurement() {
@@ -53,6 +75,8 @@ private:
     hdr_hist _produce_latency;
     hdr_hist _fetch_latency;
     ss::metrics::metric_groups _metrics;
+    ss::metrics::metric_groups _public_metrics = ss::metrics::metric_groups(
+      ssx::public_metrics_handle);
 };
 
 } // namespace kafka

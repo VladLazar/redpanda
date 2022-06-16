@@ -75,6 +75,7 @@ private:
     uint64_t _bytes_produced{0};
     uint64_t _bytes_fetched{0};
     ss::metrics::metric_groups _metrics;
+    ss::metrics::metric_groups _public_metrics;
 };
 
 partition_probe make_materialized_partition_probe();
