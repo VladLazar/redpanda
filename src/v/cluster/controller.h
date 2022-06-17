@@ -114,6 +114,9 @@ public:
     ss::future<> stop();
 
 private:
+    friend controller_probe;
+
+private:
     config_manager::preload_result _config_preload;
 
     ss::sharded<ss::abort_source> _as;                     // instance per core

@@ -11,9 +11,14 @@
 
 #include "cluster/controller.h"
 #include "cluster/controller_probe.h"
+#include "cluster/health_monitor_backend.h"
+#include "cluster/health_monitor_types.h"
+#include "cluster/partition_leaders_table.h"
 #include "cluster/members_table.h"
 #include "config/configuration.h"
 #include "prometheus/prometheus_sanitize.h"
+
+#include <absl/container/flat_hash_set.h>
 
 #include <seastar/core/metrics.hh>
 
@@ -32,19 +37,29 @@ void controller_probe::setup_metrics() {
         prometheus_sanitize::metrics_name("cluster"),
         {
             sm::make_gauge(
-                "members",
+                "brokers",
                 [this] {
                     const auto& members_table = _controller.get_members_table().local();
                     return members_table.all_broker_ids().size();
                 },
-                sm::description("Number of nodes in the cluster"),
+                sm::description("Number of brokers in the cluster"),
                 {},
                 {sm::shard_label.name()}),
             sm::make_gauge(
                 "topics",
                 [this] {
-                    const auto& topic_table = _controller.get_topics_state().local();
-                    return topic_table.all_topics_metadata().size();
+                    auto& health_monitor = _controller._hm_backend.local();
+                    const auto& report = 
+                        health_monitor.get_current_cluster_health_snapshot({});
+
+                    absl::flat_hash_set<model::topic_namespace> unique_topics;
+                    for (const auto& node_report: report.node_reports) {
+                        for (const auto& topic_status: node_report.topics) {
+                            unique_topics.emplace(topic_status.tp_ns);
+                        }
+                    }
+
+                    return unique_topics.size();
                 },
                 sm::description("Number of topics in the cluster"),
                 {},
