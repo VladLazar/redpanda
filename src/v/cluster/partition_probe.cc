@@ -79,7 +79,8 @@ void replicated_partition_probe::setup_metrics(const model::ntp& ntp) {
           sm::description("Total number of bytes produced per topic"),
           {request_label("produce"),
            ns_label(ntp.ns()),
-           topic_label(ntp.tp.topic())},
+           topic_label(ntp.tp.topic()),
+           partition_label(ntp.tp.partition())},
           sm::impl::shard(),
           {sm::shard_label.name(), partition_label.name()}),
         sm::make_total_bytes(
@@ -88,7 +89,8 @@ void replicated_partition_probe::setup_metrics(const model::ntp& ntp) {
           sm::description("Total number of bytes consumed per topic"),
           {request_label("consume"),
            ns_label(ntp.ns()),
-           topic_label(ntp.tp.topic())},
+           topic_label(ntp.tp.topic()),
+           partition_label(ntp.tp.partition())},
           sm::impl::shard(),
           {sm::shard_label.name(), partition_label.name()}),
         sm::make_gauge(
@@ -98,7 +100,7 @@ void replicated_partition_probe::setup_metrics(const model::ntp& ntp) {
               return metrics.size();
           },
           sm::description("Number of replicas"),
-          {ns_label(ntp.ns()), topic_label(ntp.tp.topic())},
+          {ns_label(ntp.ns()), topic_label(ntp.tp.topic()), partition_label(ntp.tp.partition())},
           {sm::shard_label.name(), partition_label.name()}),
         //sm::make_gauge(
         //  "partitions",
