@@ -102,34 +102,6 @@ void replicated_partition_probe::setup_metrics(const model::ntp& ntp) {
           sm::description("Number of replicas"),
           {ns_label(ntp.ns()), topic_label(ntp.tp.topic()), partition_label(ntp.tp.partition())},
           {sm::shard_label.name(), partition_label.name()}),
-        //sm::make_gauge(
-        //  "partitions",
-        //  [this] {
-        //      auto metrics = _partition._raft->get_follower_metrics();
-        //      return metrics.size();
-        //  },
-        //  sm::description("Number of partitions"),
-        //  {ns_label(ntp.ns()), topic_label(ntp.tp.topic())},
-        //  {sm::shard_label.name(), partition_label.name()}),
-        // Broker Level Metrics
-        sm::make_total_bytes(
-          "request_bytes_per_broker",
-          [this] { return _bytes_produced; },
-          sm::description("Total number of bytes produced"),
-          {request_label("produce"),
-           ns_label(ntp.ns()),
-           topic_label(ntp.tp.topic())},
-          sm::impl::shard(),
-          {sm::shard_label.name(), partition_label.name(), topic_label.name(), ns_label.name()}),
-        sm::make_total_bytes(
-          "request_bytes_total_per_broker",
-          [this] { return _bytes_fetched; },
-          sm::description("Total number of bytes consumed"),
-          {request_label("consume"),
-           ns_label(ntp.ns()),
-           topic_label(ntp.tp.topic())},
-          sm::impl::shard(),
-          {sm::shard_label.name(), partition_label.name(), topic_label.name(), ns_label.name()}),
       },
       sm::impl::default_handle() + 1);
 
