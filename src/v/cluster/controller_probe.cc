@@ -67,14 +67,10 @@ void controller_probe::setup_metrics() {
             sm::make_gauge(
                 "partitions",
                 [this] { 
-                    const auto& topic_table = _controller.get_topics_state().local();
-                    const auto& metadata = topic_table.all_topics_metadata();
+                    const auto& leaders_table = _controller._partition_leaders.local();
+                    auto leaders = leaders_table.get_leaders();
 
-                    return std::reduce(metadata.begin(), metadata.end(), 0,
-            [](auto acc, const auto& topic_metadata) {
-                auto count = topic_metadata.second.get_configuration().partition_count;
-                return acc + count;
-            });
+                    return leaders.size();
                 },
                 sm::description("Number of partitions in the cluster"),
                 {},
