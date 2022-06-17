@@ -75,6 +75,21 @@ void controller_probe::setup_metrics() {
                 sm::description("Number of partitions in the cluster"),
                 {},
                 {sm::shard_label.name()}),
+            sm::make_gauge(
+                "unavailable_partitions",
+                [this] {
+                    const auto& leaders_table = _controller._partition_leaders.local();
+                    auto leaders = leaders_table.get_leaders();
+                    
+                    return std::count_if(leaders.begin(), leaders.end(),
+                        [](const auto& leader_info) {
+                            return !leader_info.current_leader.has_value();
+                    });
+                },
+                sm::description(
+                    "Number of partitions that lack quorum among replicants"),
+                {},
+                {sm::shard_label.name()}),
         },
       sm::impl::default_handle() + 1);
 }
