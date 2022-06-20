@@ -9,22 +9,39 @@
  * by the Apache License, Version 2.0
  */
 
-#include "cluster/controller.h"
 #include "cluster/controller_probe.h"
+
+#include "cluster/controller.h"
 #include "cluster/health_monitor_backend.h"
 #include "cluster/health_monitor_types.h"
 #include "cluster/partition_leaders_table.h"
 #include "cluster/members_table.h"
-#include "config/configuration.h"
 #include "prometheus/prometheus_sanitize.h"
 
 #include <absl/container/flat_hash_set.h>
-
 #include <seastar/core/metrics.hh>
 
 namespace cluster {
 
-controller_probe::controller_probe(controller& c) noexcept : _controller(c) {}
+controller_probe::controller_probe(controller& c) noexcept : _controller(c) {
+    _controller._raft_manager.local()
+        .register_leadership_notification([this](
+            raft::group_id group,
+            model::term_id /*term*/,
+            std::optional<model::node_id> leader_id) {
+
+        // We are only interested in notifications regarding the controller group.
+        if (_controller._raft0->group() != group) {
+            return;
+        }
+
+        if (!leader_id.has_value() || leader_id.value() != _controller.self()) {
+            _metrics.reset();
+        } else {
+            setup_metrics();
+        }
+    });
+}
 
 void controller_probe::setup_metrics() {
     namespace sm = ss::metrics;
@@ -33,7 +50,8 @@ void controller_probe::setup_metrics() {
         return;
     }
 
-    _metrics.add_group(
+    _metrics = std::make_unique<ss::metrics::metric_groups>();
+    _metrics->add_group(
         prometheus_sanitize::metrics_name("cluster"),
         {
             sm::make_gauge(
