@@ -26,7 +26,7 @@ public:
 
 private:
     cluster::controller& _controller;
-    ss::metrics::metric_groups _metrics;
+    std::unique_ptr<ss::metrics::metric_groups> _metrics;
 };
 
 } // namespace cluster
