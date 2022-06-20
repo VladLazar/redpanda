@@ -13,10 +13,12 @@
 #include "prometheus/prometheus_sanitize.h"
 
 #include <seastar/core/metrics.hh>
+#include <seastar/core/metrics_registration.hh>
 
 namespace pandaproxy {
 
-probe::probe(ss::httpd::path_description& path_desc)
+probe::probe(
+  ss::httpd::path_description& path_desc, const ss::sstring& group_name)
   : _request_hist()
   , _metrics() {
     if (config::shard_local_cfg().disable_metrics()) {
@@ -41,6 +43,20 @@ probe::probe(ss::httpd::path_description& path_desc)
         labels,
         [this] { return _request_hist.seastar_histogram_logform(); },
         internal_aggregate_labels)});
+
+    _metrics.add_group(
+      group_name,
+      {sm::make_histogram(
+        "request_latency_seconds",
+        sm::description("Request latency"),
+        labels,
+        [this] {
+            // Report from 1ms -> ~1min in seconds
+            return _request_hist.seastar_histogram_logform(
+              16, 1000, 2.0, 1000000);
+        },
+        aggregate_labels)},
+      sm::impl::default_handle() + 1);
 }
 
 } // namespace pandaproxy
