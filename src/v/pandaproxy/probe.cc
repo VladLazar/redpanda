@@ -11,27 +11,46 @@
 
 #include "config/configuration.h"
 #include "prometheus/prometheus_sanitize.h"
+#include "ssx/metrics.h"
+#include "ssx/sformat.h"
 
 #include <seastar/core/metrics.hh>
+#include <seastar/core/metrics_registration.hh>
 
 namespace pandaproxy {
 
-probe::probe(ss::httpd::path_description& path_desc)
+probe::probe(
+  ss::httpd::path_description& path_desc, const ss::sstring& group_name)
   : _request_hist()
-  , _metrics() {
+  , _metrics()
+  , _public_metrics(ssx::public_metrics_handle) {
     if (config::shard_local_cfg().disable_metrics()) {
         return;
     }
     namespace sm = ss::metrics;
+    auto operation_label = sm::label("operation");
     std::vector<sm::label_instance> labels{
-      sm::label("operation")(path_desc.operations.nickname)};
+      operation_label(path_desc.operations.nickname)};
+
+    auto aggregate_labels = std::vector<sm::label>{
+      sm::shard_label, operation_label};
+
     _metrics.add_group(
       "pandaproxy",
       {sm::make_histogram(
-        "request_latency",
-        sm::description("Request latency"),
-        std::move(labels),
-        [this] { return _request_hist.seastar_histogram_logform(); })});
+        "request_latency", sm::description("Request latency"), labels, [this] {
+            return _request_hist.seastar_histogram_logform();
+        })});
+
+    _public_metrics.add_group(
+      group_name,
+      {sm::make_histogram(
+         "request_latency_seconds",
+         sm::description(
+           ssx::sformat("Internal latency of request for {}", group_name)),
+         labels,
+         [this] { return ssx::report_default_histogram(_request_hist); })
+         .aggregate(aggregate_labels)});
 }
 
 } // namespace pandaproxy
