@@ -23,6 +23,7 @@
 #include "kafka/server/member.h"
 #include "kafka/types.h"
 #include "model/fundamental.h"
+#include "model/namespace.h"
 #include "model/record.h"
 #include "seastarx.h"
 #include "utils/mutex.h"
@@ -162,11 +163,12 @@ public:
           offset_metadata _metadata,
           const kafka::group_id& group_id,
           const model::topic_partition& tp,
+          model::topic_namespace tp_ns,
           enable_group_metrics enable_metrics)
           : metadata(std::move(_metadata))
           , probe(metadata.offset) {
             if (enable_metrics) {
-                probe.setup_metrics(group_id, tp);
+                probe.setup_metrics(group_id, tp, tp_ns);
             }
         }
     };
@@ -183,6 +185,7 @@ public:
       config::configuration& conf,
       ss::lw_shared_ptr<cluster::partition> partition,
       group_metadata_serializer,
+      model::topic_namespace tp_ns,
       enable_group_metrics);
 
     // constructor used when loading state from log
@@ -192,6 +195,7 @@ public:
       config::configuration& conf,
       ss::lw_shared_ptr<cluster::partition> partition,
       group_metadata_serializer,
+      model::topic_namespace tp_ns,
       enable_group_metrics);
 
     /// Get the group id.
@@ -534,7 +538,7 @@ public:
             _offsets.emplace(
               std::move(tp),
               std::make_unique<offset_metadata_with_probe>(
-                std::move(md), _id, tp, _enable_group_metrics));
+                std::move(md), _id, tp, _tp_ns, _enable_group_metrics));
         }
     }
 
@@ -549,7 +553,7 @@ public:
             _offsets.emplace(
               std::move(tp),
               std::make_unique<offset_metadata_with_probe>(
-                std::move(md), _id, tp, _enable_group_metrics));
+                std::move(md), _id, tp, _tp_ns, _enable_group_metrics));
             return true;
         }
     }
@@ -734,6 +738,11 @@ private:
       model::topic_partition,
       std::unique_ptr<offset_metadata_with_probe>>
       _offsets;
+    group_probe<
+      model::topic_partition,
+      std::unique_ptr<offset_metadata_with_probe>>
+      _probe;
+    model::topic_namespace _tp_ns;
     model::violation_recovery_policy _recovery_policy;
     ctx_log _ctxlog;
     ctx_log _ctx_txlog;

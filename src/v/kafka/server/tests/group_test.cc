@@ -51,6 +51,7 @@ static group get() {
       conf,
       nullptr,
       make_backward_compatible_serializer(),
+      model::topic_namespace{model::ns{"kafka"}, model::topic{"sample"}},
       enable_group_metrics::no);
 }
 
