@@ -53,4 +53,50 @@ probe::probe(
          .aggregate(aggregate_labels)});
 }
 
+error_probe::error_probe(const ss::sstring& group_name)
+  : _5xx_count(0)
+  , _4xx_count(0)
+  , _3xx_count(0)
+  , _public_metrics(ssx::public_metrics_handle) {
+    if (config::shard_local_cfg().disable_metrics()) {
+        return;
+    }
+
+    namespace sm = ss::metrics;
+
+    auto status_label = sm::label("status");
+
+    _public_metrics.add_group(
+      group_name,
+      {
+        sm::make_counter(
+        "request_errors_total",
+        [this] { return _5xx_count; },
+        sm::description(ssx::sformat("Total number of {} server errors", group_name)),
+        {status_label("5xx")})
+        .aggregate({sm::shard_label}),
+
+        sm::make_counter(
+        "request_errors_total",
+        [this] { return _4xx_count; },
+        sm::description(ssx::sformat("Total number of {} client errors", group_name)),
+        {status_label("4xx")})
+        .aggregate({sm::shard_label}),
+
+        sm::make_counter(
+        "request_errors_total",
+        [this] { return _3xx_count; },
+        sm::description(ssx::sformat("Total number of {} redirection errors", group_name)),
+        {status_label("3xx")})
+        .aggregate({sm::shard_label}),
+
+        sm::make_counter(
+        "request_errors_total",
+        [this] { return _5xx_count + _4xx_count + _3xx_count; },
+        sm::description(ssx::sformat("Total number of {} errors", group_name)),
+        {})
+        .aggregate({sm::shard_label})
+      });
+  }
+
 } // namespace pandaproxy

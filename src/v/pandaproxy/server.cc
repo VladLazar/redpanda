@@ -126,7 +126,8 @@ server::server(
   , _pending_reqs()
   , _api20(std::move(api20))
   , _has_routes(false)
-  , _ctx(ctx) {
+  , _ctx(ctx)
+  , _eprobe(_server_name) {
     _api20.set_api_doc(_server._routes);
     _api20.register_api_file(_server._routes, header);
     _api20.add_definitions_file(_server._routes, definitions);
@@ -165,7 +166,7 @@ ss::future<> server::start(
   const std::vector<model::broker_endpoint>& advertised,
   json::serialization_format exceptional_mime_type) {
     _server._routes.register_exeption_handler(
-      exception_replier{ss::sstring{name(exceptional_mime_type)}});
+      exception_replier{ss::sstring{name(exceptional_mime_type)}, _eprobe});
     _ctx.advertised_listeners.reserve(endpoints.size());
     for (auto& server_endpoint : endpoints) {
         auto addr = co_await net::resolve_dns(server_endpoint.address);
