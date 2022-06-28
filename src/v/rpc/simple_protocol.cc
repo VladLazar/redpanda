@@ -200,6 +200,7 @@ simple_protocol::dispatch_method_once(header h, net::server::resources rs) {
                           "Service handler threw an exception: {}",
                           std::current_exception());
                         rs.probe().service_error();
+                        rs.probe().internal_error();
                         reply_buf.set_status(rpc::status::server_error);
                     }
                     return send_reply(ctx, std::move(reply_buf))

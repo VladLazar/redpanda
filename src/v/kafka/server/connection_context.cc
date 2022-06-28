@@ -352,6 +352,7 @@ connection_context::dispatch_method_once(request_header hdr, size_t size) {
                           })
                           .finally([self, d = std::move(d)]() mutable {
                               self->_rs.probe().service_error();
+                              self->_rs.probe().kafka_error();
                               self->_rs.probe().request_completed();
                               return std::move(d);
                           });
@@ -396,6 +397,7 @@ connection_context::dispatch_method_once(request_header hdr, size_t size) {
                               }
 
                               self->_rs.probe().service_error();
+                              self->_rs.probe().kafka_error();
                               self->_rs.conn->shutdown_input();
                           })
                           .finally([s = std::move(s), self] {});

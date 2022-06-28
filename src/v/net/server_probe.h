@@ -21,6 +21,7 @@ namespace net {
 
 class server_probe {
 public:
+    server_probe();
     void connection_established() {
         ++_connects;
         ++_connections;
@@ -52,6 +53,10 @@ public:
 
     void waiting_for_conection_rate() { ++_connections_wait_rate; }
 
+    void kafka_error() { ++_kafka_req_errors; }
+
+    void internal_error() { ++_internal_req_errors; }
+
     void setup_metrics(ss::metrics::metric_groups& mgs, const char* name);
 
 private:
@@ -69,6 +74,9 @@ private:
     uint32_t _requests_blocked_memory = 0;
     uint32_t _declined_new_connections = 0;
     uint32_t _connections_wait_rate = 0;
+    uint32_t _kafka_req_errors = 0;
+    uint32_t _internal_req_errors = 0;
+    ss::metrics::metric_groups _public_metrics;
     friend std::ostream& operator<<(std::ostream& o, const server_probe& p);
 };
 

@@ -11,6 +11,7 @@
 #include "net/server_probe.h"
 #include "prometheus/prometheus_sanitize.h"
 #include "ssx/sformat.h"
+#include "ssx/metrics.h"
 
 #include <seastar/core/metrics.hh>
 #include <seastar/net/inet_address.hh>
@@ -18,6 +19,9 @@
 #include <ostream>
 
 namespace net {
+server_probe::server_probe()
+  : _public_metrics(ssx::public_metrics_handle) {}
+
 void server_probe::setup_metrics(
   ss::metrics::metric_groups& mgs, const char* proto) {
     namespace sm = ss::metrics;
@@ -92,6 +96,31 @@ void server_probe::setup_metrics(
             "{}: Number of connections are blocked by connection rate",
             proto))),
       });
+
+    ss::sstring proto_name(proto);
+
+    // Only register the metric for one proto
+    // otherwise we get double registration problems
+    if (proto_name == "internal_rpc") {
+      auto component_label = sm::label("component");
+
+      _public_metrics.add_group(
+        "rpc",
+        {
+          sm::make_counter(
+            "request_errors_total",
+            [this] { return _kafka_req_errors; },
+            sm::description("Number of rpc errors"),
+            {component_label("kafka")})
+            .aggregate({sm::shard_label}),
+          sm::make_counter(
+            "request_errors_total",
+            [this] { return _internal_req_errors; },
+            sm::description("Number of rpc errors"),
+            {component_label("internal")})
+            .aggregate({sm::shard_label})
+        });
+    }
 }
 
 std::ostream& operator<<(std::ostream& o, const server_probe& p) {
