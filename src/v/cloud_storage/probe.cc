@@ -12,12 +12,15 @@
 
 #include "prometheus/prometheus_sanitize.h"
 
+#include "ssx/metrics.h"
+
 #include <seastar/core/metrics.hh>
 #include <seastar/core/smp.hh>
 
 namespace cloud_storage {
 
-remote_probe::remote_probe(remote_metrics_disabled disabled) {
+remote_probe::remote_probe(remote_metrics_disabled disabled)
+  : _public_metrics(ssx::public_metrics_handle) {
     if (disabled) {
         return;
     }
@@ -94,6 +97,25 @@ remote_probe::remote_probe(remote_metrics_disabled disabled) {
           "bytes_received",
           [this] { return _cnt_bytes_received; },
           sm::description("Number of bytes received from cloud storage")),
+      });
+
+    auto direction_label = sm::label("direction");
+
+    _public_metrics.add_group(
+      prometheus_sanitize::metrics_name("shadow_indexing"),
+      {
+        sm::make_counter(
+          "errors_total",
+          [this] { return get_failed_transmissions(); },
+          sm::description("Number of transmission & recieve errors"),
+          {direction_label("tx")})
+          .aggregate({sm::shard_label}),
+        sm::make_counter(
+          "errors_total",
+          [this] { return get_failed_recieves(); },
+          sm::description("Number of transmission & recieve errors"),
+          {direction_label("rx")})
+          .aggregate({sm::shard_label})
       });
 }
 

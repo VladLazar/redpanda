@@ -131,6 +131,18 @@ public:
 
     void register_download_size(size_t n) { _cnt_bytes_received += n; }
 
+    /// Register failed transmissions
+    void failed_transmission() { _cnt_failed_tx++; }
+
+    /// Get failed transmissions
+    uint64_t get_failed_transmissions() const { return _cnt_failed_tx; }
+
+    /// Register failed recieves
+    void failed_recieve() { _cnt_failed_rx++; }
+
+    /// Get failed recieves
+    uint64_t get_failed_recieves() const { return _cnt_failed_rx; }
+
 private:
     /// Number of topic manifest uploads
     uint64_t _cnt_topic_manifest_uploads{0};
@@ -164,8 +176,13 @@ private:
     uint64_t _cnt_bytes_sent{0};
     /// Number of bytes being successfully received from S3
     uint64_t _cnt_bytes_received{0};
+    /// Number of failed requests on the transmission path
+    uint64_t _cnt_failed_tx{0};
+    /// Number of failed requests on the recieve path
+    uint64_t _cnt_failed_rx{0};
 
     ss::metrics::metric_groups _metrics;
+    ss::metrics::metric_groups _public_metrics;
 };
 
 } // namespace cloud_storage

@@ -229,6 +229,7 @@ ss::future<download_result> remote::download_manifest(
         }
     }
     _probe.failed_manifest_download();
+    _probe.failed_recieve();
     if (!result) {
         vlog(
           ctxlog.warn,
@@ -300,6 +301,7 @@ ss::future<upload_result> remote::upload_manifest(
         }
     }
     _probe.failed_manifest_upload();
+    _probe.failed_transmission();
     if (!result) {
         vlog(
           ctxlog.warn,
@@ -388,6 +390,7 @@ ss::future<upload_result> remote::upload_segment(
         }
     }
     _probe.failed_upload();
+    _probe.failed_transmission();
     if (!result) {
         vlog(
           ctxlog.warn,
@@ -460,6 +463,7 @@ ss::future<download_result> remote::download_segment(
         }
     }
     _probe.failed_download();
+    _probe.failed_recieve();
     if (!result) {
         vlog(
           ctxlog.warn,
