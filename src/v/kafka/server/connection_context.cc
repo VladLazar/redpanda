@@ -255,6 +255,7 @@ connection_context::throttle_request(
                 };
                 if (track) {
                     r.method_latency = _rs.hist().auto_measure();
+                    r.public_method_latency = _rs.kafka_hist().auto_measure();
                 }
                 return r;
             });

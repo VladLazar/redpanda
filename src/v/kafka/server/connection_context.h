@@ -154,6 +154,7 @@ private:
         ss::semaphore_units<> memlocks;
         ss::semaphore_units<> queue_units;
         std::unique_ptr<hdr_hist::measurement> method_latency;
+        std::unique_ptr<hdr_hist::measurement> public_method_latency;
         std::unique_ptr<request_tracker> tracker;
     };
 

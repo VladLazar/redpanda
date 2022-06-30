@@ -31,7 +31,8 @@ namespace net {
 
 server::server(server_configuration c)
   : cfg(std::move(c))
-  , _memory(cfg.max_service_memory_per_core) {}
+  , _memory(cfg.max_service_memory_per_core)
+  , _rpc_hist(ss::make_lw_shared<hdr_hist>()) {}
 
 server::server(ss::sharded<server_configuration>* s)
   : server(s->local()) {}

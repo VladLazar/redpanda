@@ -56,6 +56,7 @@
 #include "redpanda/admin_server.h"
 #include "resource_mgmt/io_priority.h"
 #include "rpc/simple_protocol.h"
+#include "ssx/metrics.h"
 #include "storage/backlog_controller.h"
 #include "storage/chunk_cache.h"
 #include "storage/compaction_controller.h"
@@ -122,7 +123,8 @@ static void set_sr_local_kafka_client_config(
 }
 
 application::application(ss::sstring logger_name)
-  : _log(std::move(logger_name)){};
+  : _log(std::move(logger_name))
+  , _public_metrics(ssx::public_metrics_handle) {};
 
 application::~application() = default;
 
@@ -341,6 +343,26 @@ void application::setup_metrics() {
           sm::description("Redpanda build information"),
           build_labels),
       });
+
+    auto component_label = sm::label("component");
+    _public_metrics.add_group(
+        "rpc",
+        {
+            sm::make_histogram(
+            "latency_seconds",
+            sm::description("Internal RPC latency"),
+            {component_label("internal")},
+            [this] { return _rpc.local().rpc_hist()->seastar_histogram_logform(); })
+            .aggregate({sm::shard_label}),
+
+            sm::make_histogram(
+            "latency_seconds",
+            sm::description("Kafka RPC latency"),
+            {component_label("kafka")},
+            [this] { return _kafka_server.local().kafka_hist().seastar_histogram_logform(); })
+            .aggregate({sm::shard_label})
+        }
+    );
 }
 
 void application::validate_arguments(const po::variables_map& cfg) {
@@ -1219,6 +1241,7 @@ void application::start_redpanda(::stop_signal& app_signal) {
     _rpc
       .invoke_on_all([this](net::server& s) {
           auto proto = std::make_unique<rpc::simple_protocol>();
+          proto->set_rpc_hist(s.rpc_hist());
           proto->register_service<cluster::id_allocator>(
             _scheduling_groups.raft_sg(),
             smp_service_groups.raft_smp_sg(),

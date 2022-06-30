@@ -126,6 +126,7 @@ public:
         server_probe& probe() { return _s->_probe; }
         ss::semaphore& memory() { return _s->_memory; }
         hdr_hist& hist() { return _s->_hist; }
+        hdr_hist& kafka_hist() { return _s->_kafka_hist; }
         ss::gate& conn_gate() { return _s->_conn_gate; }
         ss::abort_source& abort_source() { return _s->_as; }
         bool abort_requested() const { return _s->_as.abort_requested(); }
@@ -178,6 +179,8 @@ public:
 
     const server_configuration cfg; // NOLINT
     const hdr_hist& histogram() const { return _hist; }
+    ss::lw_shared_ptr<hdr_hist> rpc_hist() { return _rpc_hist; }
+    hdr_hist& kafka_hist() { return _kafka_hist; }
 
 private:
     struct listener {
@@ -200,6 +203,8 @@ private:
     ss::abort_source _as;
     ss::gate _conn_gate;
     hdr_hist _hist;
+    ss::lw_shared_ptr<hdr_hist> _rpc_hist;
+    hdr_hist _kafka_hist;
     server_probe _probe;
     ss::metrics::metric_groups _metrics;
 

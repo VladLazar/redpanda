@@ -11,6 +11,7 @@
 
 #include "rpc/logger.h"
 #include "rpc/types.h"
+#include "ssx/metrics.h"
 
 #include <seastar/core/future-util.hh>
 
@@ -160,6 +161,8 @@ simple_protocol::dispatch_method_once(header h, net::server::resources rs) {
 
               method* m = it->get()->method_from_id(method_id);
 
+              auto measure = _rpc_hist->auto_measure();
+
               return m->handle(ctx->res.conn->input(), *ctx)
                 .then_wrapped([ctx, m, l = ctx->res.hist().auto_measure(), rs](
                                 ss::future<netbuf> fut) mutable {
@@ -207,7 +210,7 @@ simple_protocol::dispatch_method_once(header h, net::server::resources rs) {
                       .finally([m, l = std::move(l)]() mutable {
                           m->probes.latency_hist().record(std::move(l));
                       });
-                });
+                }).finally([measure{std::move(measure)}]() {});
           })
           .handle_exception([](const std::exception_ptr& e) {
               rpclog.error("Error dispatching: {}", e);

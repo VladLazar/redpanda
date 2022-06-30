@@ -12,6 +12,7 @@
 #pragma once
 #include "net/server.h"
 #include "rpc/service.h"
+#include "utils/hdr_hist.h"
 
 #include <concepts>
 
@@ -34,10 +35,14 @@ public:
         }
     }
 
+    void set_rpc_hist(ss::lw_shared_ptr<hdr_hist> hist) { _rpc_hist = hist; }
+
 private:
     ss::future<> dispatch_method_once(header, net::server::resources);
 
     std::vector<std::unique_ptr<service>> _services;
+
+    ss::lw_shared_ptr<hdr_hist> _rpc_hist;
 };
 
 } // namespace rpc
