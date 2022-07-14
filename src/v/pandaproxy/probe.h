@@ -25,7 +25,13 @@ public:
     hdr_hist& hist() { return _request_hist; }
 
 private:
+    void setup_metrics();
+    void setup_public_metrics();
+
+private:
     hdr_hist _request_hist;
+    const ss::httpd::path_description& _path;
+    const ss::sstring& _group_name;
     ss::metrics::metric_groups _metrics;
     ss::metrics::metric_groups _public_metrics;
 };
