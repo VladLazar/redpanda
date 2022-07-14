@@ -24,7 +24,16 @@ probe::probe(
   : _request_hist()
   , _metrics()
   , _public_metrics(ssx::metrics::public_metrics_handle) {
+    setup_metrics();
+    setup_public_metrics();
+}
+
+void probe::setup_metrics() {
     namespace sm = ss::metrics;
+
+    if (config::shard_local_cfg().disable_metrics()) {
+        return;
+    }
 
     auto operation_label = sm::label("operation");
     std::vector<sm::label_instance> labels{
@@ -33,35 +42,46 @@ probe::probe(
     auto aggregate_labels = std::vector<sm::label>{
       sm::shard_label, operation_label};
 
-    if (!config::shard_local_cfg().disable_metrics()) {
-        auto internal_aggregate_labels
-          = config::shard_local_cfg().aggregate_metrics()
-              ? aggregate_labels
-              : std::vector<sm::label>{};
+    auto internal_aggregate_labels
+      = config::shard_local_cfg().aggregate_metrics()
+          ? aggregate_labels
+          : std::vector<sm::label>{};
 
-        _metrics.add_group(
-          "pandaproxy",
-          {sm::make_histogram(
-             "request_latency",
-             sm::description("Request latency"),
-             labels,
-             [this] { return _request_hist.seastar_histogram_logform(); })
-             .aggregate(internal_aggregate_labels)});
+    _metrics.add_group(
+      "pandaproxy",
+      {sm::make_histogram(
+         "request_latency",
+         sm::description("Request latency"),
+         labels,
+         [this] { return _request_hist.seastar_histogram_logform(); })
+         .aggregate(internal_aggregate_labels)});
+}
+
+void probe::setup_public_metrics() {
+    namespace sm = ss::metrics;
+
+    if (config::shard_local_cfg().disable_public_metrics()) {
+        return;
     }
 
-    if (!config::shard_local_cfg().disable_public_metrics()) {
-        _public_metrics.add_group(
-          group_name,
-          {sm::make_histogram(
-             "request_latency_seconds",
-             sm::description(
-               ssx::sformat("Internal latency of request for {}", group_name)),
-             labels,
-             [this] {
-                 return ssx::metrics::report_default_histogram(_request_hist);
-             })
-             .aggregate(aggregate_labels)});
-    }
+    auto operation_label = ssx::metrics::make_namespaced_label("operation");
+    std::vector<sm::label_instance> labels{
+      operation_label(path_desc.operations.nickname)};
+
+    auto aggregate_labels = std::vector<sm::label>{
+      sm::shard_label, operation_label};
+
+    _public_metrics.add_group(
+      group_name,
+      {sm::make_histogram(
+         "request_latency_seconds",
+         sm::description(
+           ssx::sformat("Internal latency of request for {}", group_name)),
+         labels,
+         [this] {
+             return ssx::metrics::report_default_histogram(_request_hist);
+         })
+         .aggregate(aggregate_labels)});
 }
 
 } // namespace pandaproxy
