@@ -649,7 +649,7 @@ ss::future<> s3_client::put_object(
       });
 }
 
-ss::future<s3_client::list_bucket_result> s3_client::list_objects_v2(
+ss::future<s3_client::list_bucket_result> s3_client::list_objects(
   const bucket_name& name,
   std::optional<object_key> prefix,
   std::optional<object_key> start_after,

@@ -106,7 +106,7 @@ public:
     /// \param max_keys optional upper bound on the number of returned keys
     /// \param body is an input_stream that can be used to read body
     /// \return future that becomes ready when the request is completed
-    virtual ss::future<list_bucket_result> list_objects_v2(
+    virtual ss::future<list_bucket_result> list_objects(
       const bucket_name& name,
       std::optional<object_key> prefix = std::nullopt,
       std::optional<object_key> start_after = std::nullopt,

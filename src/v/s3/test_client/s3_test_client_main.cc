@@ -243,7 +243,7 @@ int main(int args, char** argv, char** env) {
                         // put
                         vlog(test_log.info, "listing objects");
                         try {
-                            auto res = cli.list_objects_v2(lcfg.bucket).get0();
+                            auto res = cli.list_objects(lcfg.bucket).get0();
                             vlog(
                               test_log.info,
                               "ListBucketV2 result, prefix: {}, is-truncated: "
