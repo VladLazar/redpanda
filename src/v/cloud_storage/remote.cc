@@ -15,7 +15,7 @@
 #include "cloud_storage/remote_segment.h"
 #include "cloud_storage/types.h"
 #include "net/connection.h"
-#include "s3/client.h"
+#include "s3/s3_client.h"
 #include "ssx/sformat.h"
 #include "utils/intrusive_list_helpers.h"
 #include "utils/retry_chain_node.h"

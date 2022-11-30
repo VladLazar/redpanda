@@ -51,7 +51,7 @@ ss::future<client_pool::client_lease> client_pool::acquire() {
             if (_policy == client_pool_overdraft_policy::wait_if_empty) {
                 co_await _cvar.wait();
             } else {
-                auto cl = ss::make_shared<client>(
+                auto cl = ss::make_shared<s3_client>(
                   _config, _as, _apply_credentials);
                 _pool.emplace_back(std::move(cl));
             }
@@ -81,12 +81,12 @@ size_t client_pool::max_size() const noexcept { return _max_size; }
 
 void client_pool::populate_client_pool() {
     for (size_t i = 0; i < _max_size; i++) {
-        auto cl = ss::make_shared<client>(_config, _as, _apply_credentials);
+        auto cl = ss::make_shared<s3_client>(_config, _as, _apply_credentials);
         _pool.emplace_back(std::move(cl));
     }
 }
 
-void client_pool::release(ss::shared_ptr<client> leased) {
+void client_pool::release(ss::shared_ptr<s3_client> leased) {
     if (_pool.size() == _max_size) {
         return;
     }

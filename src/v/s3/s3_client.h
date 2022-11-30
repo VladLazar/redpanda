@@ -98,13 +98,13 @@ private:
 };
 
 /// S3 REST-API client
-class client {
+class s3_client {
 public:
-    client(
+    s3_client(
       const configuration& conf,
       ss::lw_shared_ptr<const cloud_roles::apply_credentials>
         apply_credentials);
-    client(
+    s3_client(
       const configuration& conf,
       const ss::abort_source& as,
       ss::lw_shared_ptr<const cloud_roles::apply_credentials>
