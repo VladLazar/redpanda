@@ -17,6 +17,7 @@
 #include "cloud_storage/types.h"
 #include "random/simple_time_jitter.h"
 #include "s3/client.h"
+#include "s3/client_pool.h"
 #include "storage/segment_reader.h"
 #include "utils/retry_chain_node.h"
 
