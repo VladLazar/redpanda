@@ -33,7 +33,7 @@ enum class client_pool_overdraft_policy {
 /// All connections share the same configuration
 class client_pool : public ss::weakly_referencable<client_pool> {
 public:
-    using http_client_ptr = ss::shared_ptr<s3_client>;
+    using http_client_ptr = ss::shared_ptr<client>;
     struct client_lease {
         http_client_ptr client;
         ss::deleter deleter;
@@ -62,7 +62,7 @@ public:
 
     client_pool(
       size_t size,
-      configuration conf,
+      client_configuration conf,
       client_pool_overdraft_policy policy
       = client_pool_overdraft_policy::wait_if_empty);
 
@@ -91,14 +91,15 @@ public:
 
 private:
     void populate_client_pool();
-    void release(ss::shared_ptr<s3_client> leased);
+    http_client_ptr make_client() const;
+    void release(http_client_ptr leased);
 
     ///  Wait for credentials to be acquired. Once credentials are acquired,
     ///  based on the policy, optionally wait for client pool to initialize.
     ss::future<> wait_for_credentials();
 
     const size_t _max_size;
-    configuration _config;
+    client_configuration _config;
     client_pool_overdraft_policy _policy;
     std::vector<http_client_ptr> _pool;
     // List of all connections currently used by clients
