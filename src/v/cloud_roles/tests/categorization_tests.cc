@@ -22,14 +22,15 @@ inline ss::logger test_log("test"); // NOLINT
 BOOST_AUTO_TEST_CASE(test_refresh_client_built_according_to_source) {
     ss::gate gate;
     ss::abort_source as;
-    cloud_roles::aws_region_name region{"atlantis"};
+
+    s3::client_configuration client_cfg = s3::configuration{};
     {
         auto rc = cloud_roles::make_refresh_credentials(
+          client_cfg,
           model::cloud_credentials_source::gcp_instance_metadata,
           gate,
           as,
-          [](auto) { return ss::now(); },
-          region);
+          [](auto) { return ss::now(); });
         BOOST_REQUIRE_EQUAL(
           "gcp_refresh_impl{host:169.254.169.254, port:80}",
           ssx::sformat("{}", rc));
@@ -37,11 +38,11 @@ BOOST_AUTO_TEST_CASE(test_refresh_client_built_according_to_source) {
 
     {
         auto rc = cloud_roles::make_refresh_credentials(
+          client_cfg,
           model::cloud_credentials_source::aws_instance_metadata,
           gate,
           as,
-          [](auto) { return ss::now(); },
-          region);
+          [](auto) { return ss::now(); });
         BOOST_REQUIRE_EQUAL(
           "aws_refresh_impl{host:169.254.169.254, port:80}",
           ssx::sformat("{}", rc));
@@ -52,11 +53,9 @@ BOOST_AUTO_TEST_CASE(test_refresh_client_built_according_to_source) {
         setenv("AWS_WEB_IDENTITY_TOKEN_FILE", "file_path", 1);
 
         auto rc = cloud_roles::make_refresh_credentials(
-          model::cloud_credentials_source::sts,
-          gate,
-          as,
-          [](auto) { return ss::now(); },
-          region);
+          client_cfg, model::cloud_credentials_source::sts, gate, as, [](auto) {
+              return ss::now();
+          });
         BOOST_REQUIRE_EQUAL(
           "aws_sts_refresh_impl{host:sts.amazonaws.com, port:443}",
           ssx::sformat("{}", rc));
@@ -64,11 +63,11 @@ BOOST_AUTO_TEST_CASE(test_refresh_client_built_according_to_source) {
 
     BOOST_REQUIRE_THROW(
       cloud_roles::make_refresh_credentials(
+        client_cfg,
         model::cloud_credentials_source::config_file,
         gate,
         as,
-        [](auto) { return ss::now(); },
-        region),
+        [](auto) { return ss::now(); }),
       std::invalid_argument);
 }
 

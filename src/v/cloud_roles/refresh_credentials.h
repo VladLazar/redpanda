@@ -13,6 +13,7 @@
 #include "cloud_roles/probe.h"
 #include "cloud_roles/signature.h"
 #include "model/metadata.h"
+#include "s3/configuration.h"
 #include "seastarx.h"
 
 #include <seastar/core/future.hh>
@@ -39,7 +40,6 @@ public:
         impl(
           ss::sstring api_host,
           uint16_t api_port,
-          aws_region_name region,
           ss::abort_source& as,
           retry_params retry_params);
         impl(impl&&) noexcept = default;
@@ -104,8 +104,6 @@ public:
 
         uint16_t api_port() const { return _api_port; }
 
-        aws_region_name region() const { return _region; }
-
     private:
         /// Initializes certificate_credentials on first client creation.
         /// Subsequent clients which are created will reuse the certs.
@@ -118,7 +116,6 @@ public:
         /// The port to query for credentials. Can be overridden using env
         /// variable `RP_SI_CREDS_API_PORT`
         uint16_t _api_port;
-        aws_region_name _region;
         uint8_t _retries{0};
 
         /// The duration to sleep before fetching credentials. Derived from
@@ -134,8 +131,7 @@ public:
       std::unique_ptr<impl> impl,
       ss::gate& gate,
       ss::abort_source& as,
-      credentials_update_cb_t creds_update,
-      aws_region_name region);
+      credentials_update_cb_t creds_update);
 
     void start();
 
@@ -166,7 +162,6 @@ private:
     ss::gate& _gate;
     ss::abort_source& _as;
     credentials_update_cb_t _credentials_update;
-    aws_region_name _region;
     auth_refresh_probe _probe;
 };
 
@@ -176,29 +171,32 @@ static constexpr retry_params default_retry_params{
   .backoff_ms = std::chrono::milliseconds{500}, .max_retries = 8};
 
 template<typename CredentialsProvider>
-refresh_credentials make_refresh_credentials(
-  ss::gate& gate,
-  ss::abort_source& as,
-  credentials_update_cb_t creds_update_cb,
-  aws_region_name region,
-  std::optional<net::unresolved_address> endpoint = std::nullopt,
-  retry_params retry_params = default_retry_params) {
-    auto host = endpoint ? endpoint->host() : CredentialsProvider::default_host;
-    auto port = endpoint ? endpoint->port() : CredentialsProvider::default_port;
-    auto impl = std::make_unique<CredentialsProvider>(
-      host.data(), port, region, as, retry_params);
-    return refresh_credentials{
-      std::move(impl), gate, as, std::move(creds_update_cb), std::move(region)};
+void maybe_set_default_endpoint(
+  std::optional<net::unresolved_address>& endpoint) {
+    if (!endpoint) {
+        endpoint.emplace(net::unresolved_address{
+          ss::sstring{CredentialsProvider::default_host},
+          CredentialsProvider::default_port});
+    }
 }
 
-/// Builds a refresh_credentials object based on the credentials source set in
-/// configuration.
 refresh_credentials make_refresh_credentials(
+  s3::client_configuration client_configuration,
   model::cloud_credentials_source cloud_credentials_source,
   ss::gate& gate,
   ss::abort_source& as,
   credentials_update_cb_t creds_update_cb,
-  aws_region_name region,
+  std::optional<net::unresolved_address> endpoint = std::nullopt,
+  retry_params retry_params = default_retry_params);
+
+/// Builds a refresh_credentials object based on the credentials source set in
+/// configuration.
+refresh_credentials make_refresh_credentials(
+  s3::configuration s3_client_configuration,
+  model::cloud_credentials_source cloud_credentials_source,
+  ss::gate& gate,
+  ss::abort_source& as,
+  credentials_update_cb_t creds_update_cb,
   std::optional<net::unresolved_address> endpoint = std::nullopt,
   retry_params retry_params = default_retry_params);
 

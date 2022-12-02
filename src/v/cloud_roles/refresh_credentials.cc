@@ -42,13 +42,11 @@ refresh_credentials::refresh_credentials(
   std::unique_ptr<impl> impl,
   ss::gate& gate,
   ss::abort_source& as,
-  credentials_update_cb_t creds_update,
-  aws_region_name region)
+  credentials_update_cb_t creds_update)
   : _impl(std::move(impl))
   , _gate(gate)
   , _as(as)
-  , _credentials_update(std::move(creds_update))
-  , _region{std::move(region)} {}
+  , _credentials_update(std::move(creds_update)) {}
 
 void refresh_credentials::start() {
     ssx::background = ssx::spawn_with_gate_then(
@@ -89,12 +87,10 @@ load_and_validate_env_var(std::string_view env_var) {
 refresh_credentials::impl::impl(
   ss::sstring api_host,
   uint16_t api_port,
-  aws_region_name region,
   ss::abort_source& as,
   retry_params retry_params)
   : _api_host{std::move(api_host)}
   , _api_port{api_port}
-  , _region{std::move(region)}
   , _as{as}
   , _retry_params{retry_params} {
     if (auto host_override = load_and_validate_env_var(
@@ -305,13 +301,36 @@ ss::future<> refresh_credentials::impl::init_tls_certs() {
 }
 
 refresh_credentials make_refresh_credentials(
+  s3::client_configuration client_configuration,
   model::cloud_credentials_source cloud_credentials_source,
   ss::gate& gate,
   ss::abort_source& as,
   credentials_update_cb_t creds_update_cb,
-  aws_region_name region,
   std::optional<net::unresolved_address> endpoint,
   retry_params retry_params) {
+    return std::visit(
+      [&](auto client_cfg) -> refresh_credentials {
+          return make_refresh_credentials(
+            client_cfg,
+            cloud_credentials_source,
+            gate,
+            as,
+            std::move(creds_update_cb),
+            endpoint,
+            retry_params);
+      },
+      std::move(client_configuration));
+}
+
+refresh_credentials make_refresh_credentials(
+  s3::configuration s3_client_configuration,
+  model::cloud_credentials_source cloud_credentials_source,
+  ss::gate& gate,
+  ss::abort_source& as,
+  credentials_update_cb_t creds_update_cb,
+  std::optional<net::unresolved_address> endpoint,
+  retry_params retry_params) {
+    std::unique_ptr<refresh_credentials::impl> refresh_creds_impl;
     switch (cloud_credentials_source) {
     case model::cloud_credentials_source::config_file:
         vlog(
@@ -321,30 +340,33 @@ refresh_credentials make_refresh_credentials(
         throw std::invalid_argument(fmt_with_ctx(
           fmt::format, "cannot generate refresh with static credentials"));
     case model::cloud_credentials_source::aws_instance_metadata:
-        return make_refresh_credentials<aws_refresh_impl>(
-          gate,
+        maybe_set_default_endpoint<aws_refresh_impl>(endpoint);
+        refresh_creds_impl = std::make_unique<aws_refresh_impl>(
+          endpoint->host().data(),
+          endpoint->port(),
+          std::move(s3_client_configuration.region),
           as,
-          std::move(creds_update_cb),
-          std::move(region),
-          std::move(endpoint),
           retry_params);
+        break;
     case model::cloud_credentials_source::sts:
-        return make_refresh_credentials<aws_sts_refresh_impl>(
-          gate,
+        maybe_set_default_endpoint<aws_sts_refresh_impl>(endpoint);
+        refresh_creds_impl = std::make_unique<aws_sts_refresh_impl>(
+          endpoint->host().data(),
+          endpoint->port(),
+          std::move(s3_client_configuration.region),
           as,
-          std::move(creds_update_cb),
-          std::move(region),
-          std::move(endpoint),
           retry_params);
+        break;
     case model::cloud_credentials_source::gcp_instance_metadata:
-        return make_refresh_credentials<gcp_refresh_impl>(
-          gate,
-          as,
-          std::move(creds_update_cb),
-          std::move(region),
-          std::move(endpoint),
-          retry_params);
+        maybe_set_default_endpoint<gcp_refresh_impl>(endpoint);
+        refresh_creds_impl = std::make_unique<gcp_refresh_impl>(
+          endpoint->host().data(), endpoint->port(), as, retry_params);
+        break;
     }
+
+    vassert(refresh_creds_impl, "Unknown credentials source");
+    return refresh_credentials{
+      std::move(refresh_creds_impl), gate, as, std::move(creds_update_cb)};
 }
 
 std::ostream& operator<<(std::ostream& os, const refresh_credentials& rc) {

@@ -35,6 +35,7 @@ protected:
 private:
     ss::sstring _role;
     ss::sstring _token_file_path;
+    aws_region_name _region;
 };
 
 } // namespace cloud_roles

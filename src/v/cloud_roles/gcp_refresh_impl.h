@@ -22,7 +22,6 @@ public:
     gcp_refresh_impl(
       ss::sstring api_host,
       uint16_t api_port,
-      aws_region_name region,
       ss::abort_source& as,
       retry_params retry_params = default_retry_params);
     ss::future<api_response> fetch_credentials() override;

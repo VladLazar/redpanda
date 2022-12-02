@@ -75,11 +75,11 @@ FIXTURE_TEST(test_get_oauth_token, http_imposter_fixture) {
     one_shot_fetch s(c, as);
 
     auto refresh = cloud_roles::make_refresh_credentials(
+      s3::configuration{},
       model::cloud_credentials_source::gcp_instance_metadata,
       gate,
       as,
       s,
-      cloud_roles::aws_region_name{""},
       net::unresolved_address{httpd_host_name.data(), httpd_port_number});
 
     refresh.start();
@@ -104,11 +104,11 @@ FIXTURE_TEST(test_token_refresh_on_expiry, http_imposter_fixture) {
 
     two_fetches s(c, as);
     auto refresh = cloud_roles::make_refresh_credentials(
+      s3::configuration{},
       model::cloud_credentials_source::gcp_instance_metadata,
       gate,
       as,
       s,
-      cloud_roles::aws_region_name{""},
       net::unresolved_address{httpd_host_name.data(), httpd_port_number});
 
     refresh.start();
@@ -140,11 +140,11 @@ FIXTURE_TEST(test_aws_credentials, http_imposter_fixture) {
     one_shot_fetch s(c, as);
 
     auto refresh = cloud_roles::make_refresh_credentials(
+      s3::configuration{},
       model::cloud_credentials_source::aws_instance_metadata,
       gate,
       as,
       s,
-      cloud_roles::aws_region_name{""},
       net::unresolved_address{httpd_host_name.data(), httpd_port_number});
 
     refresh.start();
@@ -195,11 +195,11 @@ FIXTURE_TEST(test_short_lived_aws_credentials, http_imposter_fixture) {
     two_fetches s(c, as);
 
     auto refresh = cloud_roles::make_refresh_credentials(
+      s3::configuration{},
       model::cloud_credentials_source::aws_instance_metadata,
       gate,
       as,
       s,
-      cloud_roles::aws_region_name{""},
       net::unresolved_address{httpd_host_name.data(), httpd_port_number});
 
     refresh.start();
@@ -240,11 +240,11 @@ FIXTURE_TEST(test_sts_credentials, http_imposter_fixture) {
     token_f.dma_write(0, token.data(), token.size()).get0();
 
     auto refresh = cloud_roles::make_refresh_credentials(
+      s3::configuration{},
       model::cloud_credentials_source::sts,
       gate,
       as,
       s,
-      cloud_roles::aws_region_name{""},
       net::unresolved_address{httpd_host_name.data(), httpd_port_number});
 
     refresh.start();
@@ -303,11 +303,11 @@ FIXTURE_TEST(test_short_lived_sts_credentials, http_imposter_fixture) {
     token_f.dma_write(0, token.data(), token.size()).get0();
 
     auto refresh = cloud_roles::make_refresh_credentials(
+      s3::configuration{},
       model::cloud_credentials_source::sts,
       gate,
       as,
       s,
-      cloud_roles::aws_region_name{""},
       net::unresolved_address{httpd_host_name.data(), httpd_port_number});
 
     refresh.start();
@@ -338,11 +338,11 @@ FIXTURE_TEST(test_client_closed_on_error, http_imposter_fixture) {
     one_shot_fetch s(c, as);
 
     auto refresh = cloud_roles::make_refresh_credentials(
+      s3::configuration{},
       model::cloud_credentials_source::aws_instance_metadata,
       gate,
       as,
       s,
-      cloud_roles::aws_region_name{""},
       net::unresolved_address{httpd_host_name.data(), httpd_port_number});
 
     refresh.start();

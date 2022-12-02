@@ -758,24 +758,12 @@ void auth_refresh_bg_op::do_start_auth_refresh_op(
         // Create an implementation of refresh_credentials based on the setting
         // cloud_credentials_source.
         try {
-            auto region_name = std::visit(
-              [](const auto& cfg) {
-                  using cfg_type = std::decay_t<decltype(cfg)>;
-                  if constexpr (std::is_same_v<s3::configuration, cfg_type>) {
-                      return cloud_roles::aws_region_name{cfg.region};
-                  } else {
-                      static_assert(
-                        s3::always_false_v<cfg_type>, "Unknown client type");
-                      return cloud_roles::aws_region_name{};
-                  }
-              },
-              _client_conf);
             _refresh_credentials.emplace(cloud_roles::make_refresh_credentials(
+              _client_conf,
               _cloud_credentials_source,
               _gate,
               _as,
-              std::move(credentials_update_cb),
-              region_name));
+              std::move(credentials_update_cb)));
 
             vlog(
               cst_log.info,

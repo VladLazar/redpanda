@@ -28,8 +28,8 @@ aws_refresh_impl::aws_refresh_impl(
   aws_region_name region,
   ss::abort_source& as,
   retry_params retry_params)
-  : refresh_credentials::impl(
-    std::move(api_host), api_port, std::move(region), as, retry_params) {}
+  : refresh_credentials::impl(std::move(api_host), api_port, as, retry_params)
+  , _region(std::move(region)) {}
 
 ss::future<api_response> aws_refresh_impl::fetch_credentials() {
     if (unlikely(!_role)) {
@@ -103,7 +103,7 @@ api_response_parse_result aws_refresh_impl::parse_response(iobuf resp) {
       .session_token
       = s3_session_token{doc[ec2_response_schema::session_token.data()]
                            .GetString()},
-      .region = region(),
+      .region = _region,
     };
 }
 

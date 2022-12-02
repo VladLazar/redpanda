@@ -38,11 +38,10 @@ struct gcp_response_schema {
 gcp_refresh_impl::gcp_refresh_impl(
   ss::sstring api_host,
   uint16_t api_port,
-  aws_region_name region,
   ss::abort_source& as,
   retry_params retry_params)
-  : refresh_credentials::impl(
-    std::move(api_host), api_port, std::move(region), as, retry_params) {}
+  : refresh_credentials::impl(std::move(api_host), api_port, as, retry_params) {
+}
 
 ss::future<api_response> gcp_refresh_impl::fetch_credentials() {
     http::client::request_header oauth_req;

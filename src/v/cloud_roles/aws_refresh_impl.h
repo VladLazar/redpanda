@@ -39,6 +39,7 @@ protected:
 
 private:
     std::optional<ss::sstring> _role;
+    aws_region_name _region;
 };
 
 } // namespace cloud_roles
