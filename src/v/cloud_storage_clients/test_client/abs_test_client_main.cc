@@ -81,6 +81,11 @@ void cli_opts(boost::program_options::options_description_easy_init opt) {
       po::value<std::string>()->default_value(""),
       "file to receive data from ABS blob");
 
+    opt(
+      "list-with-prefix",
+      po::value<std::string>(),
+      "list blobs in a container");
+
     opt("delete", po::value<std::string>(), "delete object in container");
     opt(
       "get-metadata",
@@ -108,6 +113,8 @@ struct test_conf {
 
     bool delete_blob;
     bool get_metadata;
+
+    std::optional<cloud_storage_clients::object_key> list_with_prefix;
 };
 
 template<>
@@ -131,6 +138,13 @@ test_conf cfg_from(boost::program_options::variables_map& m) {
       m["storage-account"].as<std::string>());
     auto container = cloud_storage_clients::bucket_name(
       m["container"].as<std::string>());
+
+    std::optional<cloud_storage_clients::object_key> prefix = std::nullopt;
+    if (m.contains("list-with-prefix")) {
+        prefix = cloud_storage_clients::object_key{
+          m["list-with-prefix"].as<std::string>()};
+    }
+
     cloud_storage_clients::abs_configuration client_cfg
       = cloud_storage_clients::abs_configuration::make_configuration(
           shared_key,
@@ -175,7 +189,7 @@ test_conf cfg_from(boost::program_options::variables_map& m) {
       .out = m["out"].as<std::string>(),
       .delete_blob = m.count("delete") > 0,
       .get_metadata = m.count("get-metadata") > 0,
-    };
+      .list_with_prefix = prefix};
 }
 
 // TODO(vlad): factor this out
@@ -184,6 +198,14 @@ get_input_file_as_stream(const std::filesystem::path& path) {
     auto file = ss::open_file_dma(path.native(), ss::open_flags::ro).get0();
     auto size = file.size().get0();
     return std::make_pair(ss::make_file_input_stream(std::move(file), 0), size);
+}
+
+static ss::sstring time_to_string(std::chrono::system_clock::time_point tp) {
+    std::stringstream s;
+    auto tt = std::chrono::system_clock::to_time_t(tp);
+    auto tm = *std::gmtime(&tt);
+    s << std::put_time(&tm, "%Y-%m-%dT%H:%M:%S");
+    return s.str();
 }
 
 static ss::lw_shared_ptr<cloud_roles::apply_credentials>
@@ -222,7 +244,7 @@ int main(int args, char** argv, char** env) {
               .invoke_on(
                 0,
                 [lcfg = std::move(lcfg)](
-                  cloud_storage_clients::abs_client& cli) {
+                  cloud_storage_clients::abs_client& cli) mutable {
                     vlog(test_log.info, "sending request");
                     if (!lcfg.out.empty()) {
                         // Get Blob
@@ -300,6 +322,44 @@ int main(int args, char** argv, char** env) {
                               test_log.info,
                               "Get Blob Metadata completed: etag={}",
                               result.value().etag);
+                        } else {
+                            vlog(
+                              test_log.error,
+                              "Get Blob Metadata request failed: {}",
+                              result.error());
+                        }
+                    } else if (lcfg.list_with_prefix.has_value()) {
+                        vlog(test_log.info, "Listing blobs");
+
+                        if (lcfg.list_with_prefix.value()() == "none") {
+                            lcfg.list_with_prefix.reset();
+                        }
+
+                        const auto result = cli
+                                              .list_objects(
+                                                lcfg.container,
+                                                lcfg.list_with_prefix)
+                                              .get();
+                        if (result) {
+                            const auto& val = result.value();
+                            vlog(
+                              test_log.info,
+                              "List Blobs result, prefix: {}, "
+                              "is-truncated: "
+                              "{}, "
+                              "contents:",
+                              val.prefix,
+                              val.is_truncated);
+                            for (const auto& item : val.contents) {
+                                vlog(
+                                  test_log.info,
+                                  "\tkey: {}, last_modified: {}, "
+                                  "size_bytes: "
+                                  "{}",
+                                  item.key,
+                                  time_to_string(item.last_modified),
+                                  item.size_bytes);
+                            }
                         } else {
                             vlog(
                               test_log.error,

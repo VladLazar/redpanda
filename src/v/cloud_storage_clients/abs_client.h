@@ -158,10 +158,7 @@ public:
       std::optional<object_key> start_after = std::nullopt,
       std::optional<size_t> max_keys = std::nullopt,
       const ss::lowres_clock::duration& timeout
-      = http::default_connect_timeout) override {
-        vassert(false, "abs_client::list_objects is not implemented");
-        co_return error_outcome::fail;
-    }
+      = http::default_connect_timeout) override;
 
     /// Send Delete Blob request
     /// \param name is a container name

@@ -21,6 +21,47 @@
 namespace {
 constexpr boost::beast::string_view text_plain = "text/plain";
 constexpr boost::beast::string_view block_blob = "BlockBlob";
+
+cloud_storage_clients::abs_client::list_bucket_result
+iobuf_to_list_bucket_result(iobuf buf) {
+    using namespace cloud_storage_clients;
+
+    try {
+        abs_client::list_bucket_result result;
+        auto root = util::iobuf_to_ptree(std::move(buf), abs_log);
+        auto enum_results = root.get_child("EnumerationResults");
+
+        if (auto prefix = enum_results.get_child_optional("Prefix"); prefix) {
+            result.prefix = prefix->get_value<ss::sstring>();
+        }
+
+        if (auto marker = enum_results.get_child_optional("Marker"); marker) {
+            result.is_truncated = true;
+        } else {
+            result.is_truncated = false;
+        }
+
+        auto blobs = enum_results.get_child("Blobs");
+        for (auto& [tag, blob] : blobs) {
+            abs_client::list_bucket_item item;
+            item.key = blob.get<ss::sstring>("Name");
+            item.size_bytes = blob.get<size_t>("Properties.Content-Length");
+            item.etag = blob.get<ss::sstring>("Properties.Etag");
+            // TODO(vlad): Why doesn't ss::sstring work here?
+            const auto last_modified = blob.get<std::string>(
+              "Properties.Last-Modified");
+            item.last_modified = util::parse_timestamp(last_modified);
+
+            result.contents.push_back(std::move(item));
+        }
+
+        return result;
+    } catch (...) {
+        vlog(
+          abs_log.error, "!!error parse result {}", std::current_exception());
+        throw;
+    }
+}
 } // namespace
 
 namespace cloud_storage_clients {
@@ -173,7 +214,7 @@ abs_request_creator::make_list_blobs_request(
     // Authorization:{signature}
     auto target = fmt::format("/{}?restype=container&comp=list", name());
     if (prefix) {
-        target += fmt::format("&prefix={}", prefix.value()());
+        target += fmt::format("&prefix={}", prefix.value()().string());
     }
 
     if (max_keys) {
@@ -487,42 +528,49 @@ ss::future<> abs_client::do_delete_object(
     }
 }
 
-// ss::future<result<abs_client::list_bucket_result, error_outcome>>
-// abs_client::list_objects(
-//   const bucket_name& name,
-//   std::optional<object_key> prefix,
-//   std::optional<object_key> start_after,
-//   std::optional<size_t> max_keys,
-//   const ss::lowres_clock::duration& timeout) {
-//     return send_request(
-//       do_list_objects(
-//         name, std::move(prefix), std::move(start_after), max_keys, timeout),
-//       name,
-//       object_key{""});
-// }
-//
-// ss::future<abs_client::list_bucket_result> abs_client::do_list_objects(
-//   const bucket_name& name,
-//   std::optional<object_key> prefix,
-//   std::optional<object_key> start_after,
-//   std::optional<size_t> max_keys,
-//   const ss::lowres_clock::duration& timeout) {
-//     auto header = _requestor.make_list_blobs_request(
-//       name, std::move(prefix), std::move(start_after), max_keys);
-//     if (!header) {
-//         vlog(
-//           abs_log.warn, "Failed to create request header: {}",
-//           header.error());
-//         throw std::system_error(header.error());
-//     }
-//
-//     vlog(abs_log.trace, "send https request:\n{}", header.value());
-//
-//     auto response_stream = co_await _client.request(
-//       std::move(header.value()), timeout);
-//
-//     co_await response_stream->prefetch_headers();
-//     vassert(response_stream->is_header_done(), "Header is not received");
-// }
+ss::future<result<abs_client::list_bucket_result, error_outcome>>
+abs_client::list_objects(
+  const bucket_name& name,
+  std::optional<object_key> prefix,
+  std::optional<object_key> start_after,
+  std::optional<size_t> max_keys,
+  const ss::lowres_clock::duration& timeout) {
+    return send_request(
+      do_list_objects(
+        name, std::move(prefix), std::move(start_after), max_keys, timeout),
+      name,
+      object_key{""});
+}
+
+ss::future<abs_client::list_bucket_result> abs_client::do_list_objects(
+  const bucket_name& name,
+  std::optional<object_key> prefix,
+  std::optional<object_key> start_after,
+  std::optional<size_t> max_keys,
+  const ss::lowres_clock::duration& timeout) {
+    auto header = _requestor.make_list_blobs_request(
+      name, std::move(prefix), std::move(start_after), max_keys);
+    if (!header) {
+        vlog(
+          abs_log.warn, "Failed to create request header: {}", header.error());
+        throw std::system_error(header.error());
+    }
+
+    vlog(abs_log.trace, "send https request:\n{}", header.value());
+
+    auto response_stream = co_await _client.request(
+      std::move(header.value()), timeout);
+
+    co_await response_stream->prefetch_headers();
+    vassert(response_stream->is_header_done(), "Header is not received");
+    const auto status = response_stream->get_headers().result();
+
+    iobuf buf = co_await util::drain_response_stream(response_stream);
+    if (status != boost::beast::http::status::ok) {
+        throw parse_rest_error_response(status, std::move(buf));
+    } else {
+        co_return iobuf_to_list_bucket_result(std::move(buf));
+    }
+}
 
 } // namespace cloud_storage_clients
