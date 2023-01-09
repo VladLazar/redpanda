@@ -260,9 +260,9 @@ class S3Client:
         resp = self._get_object(bucket, key)
         # Note: ETag field contains md5 hash enclosed in double quotes that have to be removed
         return ObjectMetadata(bucket=bucket,
-                                key=key,
-                                etag=resp['ETag'][1:-1],
-                                content_length=resp['ContentLength'])
+                              key=key,
+                              etag=resp['ETag'][1:-1],
+                              content_length=resp['ContentLength'])
 
     def write_object_to_file(self, bucket, key, dest_path):
         """Get object and write it to file"""
@@ -298,6 +298,6 @@ class S3Client:
             if 'Contents' in res:
                 for item in res['Contents']:
                     yield ObjectMetadata(bucket=bucket,
-                                           key=item['Key'],
-                                           etag=item['ETag'][1:-1],
-                                           content_length=item['Size'])
+                                         key=item['Key'],
+                                         etag=item['ETag'][1:-1],
+                                         content_length=item['Size'])
