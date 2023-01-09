@@ -292,7 +292,7 @@ class TopicDeleteCloudStorageTest(RedpandaTest):
 
         self._populate_topic()
 
-        objects_before = set(o.Key
+        objects_before = set(o.key
                              for o in self.redpanda.s3_client.list_objects(
                                  self.si_settings.cloud_storage_bucket))
 
@@ -318,7 +318,7 @@ class TopicDeleteCloudStorageTest(RedpandaTest):
         # Some additional time in case a buggy deletion path is async
         time.sleep(5)
 
-        objects_after = set(o.Key
+        objects_after = set(o.key
                             for o in self.redpanda.s3_client.list_objects(
                                 self.si_settings.cloud_storage_bucket))
 
