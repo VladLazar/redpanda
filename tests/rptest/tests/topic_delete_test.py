@@ -204,7 +204,7 @@ class TopicDeleteCloudStorageTest(RedpandaTest):
             wait_for_segments_removal(self.redpanda, self.topic, i, 5)
 
         # Confirm objects in remote storage
-        before_objects = self.s3_client.list_objects(
+        before_objects = self.cloud_storage_client.list_objects(
             self.si_settings.cloud_storage_bucket)
         assert sum(1 for _ in before_objects) > 0
 
@@ -221,7 +221,7 @@ class TopicDeleteCloudStorageTest(RedpandaTest):
         self._populate_topic()
 
         objects_before = set(
-            self.redpanda.s3_client.list_objects(
+            self.redpanda.cloud_storage_client.list_objects(
                 self.si_settings.cloud_storage_bucket))
 
         # Delete topic
@@ -234,7 +234,7 @@ class TopicDeleteCloudStorageTest(RedpandaTest):
 
         def remote_empty():
             """Return true if all objects removed from cloud storage"""
-            after_objects = self.s3_client.list_objects(
+            after_objects = self.cloud_storage_client.list_objects(
                 self.si_settings.cloud_storage_bucket)
             self.logger.debug("Objects after topic deletion:")
             empty = True
@@ -251,7 +251,7 @@ class TopicDeleteCloudStorageTest(RedpandaTest):
             # delay.
             time.sleep(10)
             objects_after = set(
-                self.redpanda.s3_client.list_objects(
+                self.redpanda.cloud_storage_client.list_objects(
                     self.si_settings.cloud_storage_bucket))
             objects_deleted = objects_before - objects_after
             self.logger.debug(
@@ -292,9 +292,9 @@ class TopicDeleteCloudStorageTest(RedpandaTest):
 
         self._populate_topic()
 
-        objects_before = set(o.key
-                             for o in self.redpanda.s3_client.list_objects(
-                                 self.si_settings.cloud_storage_bucket))
+        objects_before = set(
+            o.key for o in self.redpanda.cloud_storage_client.list_objects(
+                self.si_settings.cloud_storage_bucket))
 
         def get_nodes(partition):
             return list(r['node_id'] for r in partition['replicas'])
@@ -318,9 +318,9 @@ class TopicDeleteCloudStorageTest(RedpandaTest):
         # Some additional time in case a buggy deletion path is async
         time.sleep(5)
 
-        objects_after = set(o.key
-                            for o in self.redpanda.s3_client.list_objects(
-                                self.si_settings.cloud_storage_bucket))
+        objects_after = set(
+            o.key for o in self.redpanda.cloud_storage_client.list_objects(
+                self.si_settings.cloud_storage_bucket))
 
         deleted = objects_before - objects_after
         self.logger.debug(f"Objects deleted after partition move: {deleted}")
