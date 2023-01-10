@@ -22,13 +22,14 @@ import collections
 import re
 import uuid
 import zipfile
-from enum import Enum
+from enum import Enum, IntEnum
 from typing import Mapping, Optional, Tuple, Union, Any
 
 import yaml
 from ducktape.services.service import Service
 from ducktape.tests.test import TestContext
 from rptest.archival.s3_client import S3Client
+from rptest.archival.abs_client import ABSClient
 from ducktape.cluster.remoteaccount import RemoteCommandError
 from ducktape.utils.local_filesystem_utils import mkdir_p
 from ducktape.utils.util import wait_until
@@ -145,6 +146,11 @@ class MetricsEndpoint(Enum):
     PUBLIC_METRICS = 2
 
 
+class CloudStorageType(IntEnum):
+    S3 = 1
+    ABS = 2
+
+
 def one_or_many(value):
     """
     Helper for reading `one_or_many_property` configs when
@@ -258,6 +264,9 @@ class SISettings:
     GLOBAL_S3_SECRET_KEY = "s3_secret_key"
     GLOBAL_S3_REGION_KEY = "s3_region"
 
+    GLOBAL_ABS_STORAGE_ACCOUNT = "abs_storage_account"
+    GLOBAL_ABS_SHARED_KEY = "abs_shared_key"
+
     def __init__(self,
                  *,
                  log_segment_size: int = 16 * 1000000,
@@ -276,6 +285,8 @@ class SISettings:
                  cloud_storage_readreplica_manifest_sync_timeout_ms: Optional[
                      int] = None,
                  bypass_bucket_creation: bool = False):
+        self._cloud_storage_type = CloudStorageType.S3
+
         self.log_segment_size = log_segment_size
         self.cloud_storage_access_key = cloud_storage_access_key
         self.cloud_storage_secret_key = cloud_storage_secret_key
@@ -293,7 +304,50 @@ class SISettings:
         self.endpoint_url = f'http://{self.cloud_storage_api_endpoint}:{self.cloud_storage_api_endpoint_port}'
         self.bypass_bucket_creation = bypass_bucket_creation
 
+        self.cloud_storage_azure_storage_account: Optional[str] = None
+        self.cloud_storage_azure_container: Optional[str] = None
+        self.cloud_storage_azure_shared_key: Optional[str] = None
+
+    def use_abs(self):
+        self._cloud_storage_type = CloudStorageType.ABS
+
+        del self.cloud_storage_access_key
+        del self.cloud_storage_secret_key
+        del self.cloud_storage_region
+        del self.cloud_storage_bucket
+
+        self.cloud_storage_azure_shared_key = 'Eby8vdM02xNOcqFlqUwJPLlmEtlCDXJ1OUzFT50uSRZ6IFsuFq2UVErCz4I6tq/K1SZFPTOtr/KBHBeksoGMGw=='
+        self.cloud_storage_azure_storage_account = 'devstoreaccount1'
+        self.cloud_storage_azure_container = f'panda-container-{uuid.uuid1()}'
+        self.cloud_storage_api_endpoint = f'{self.cloud_storage_azure_storage_account}.blob.localhost'
+        self.cloud_storage_api_endpoint_port = 10000
+
+        self.endpoint_url = f'http://{self.cloud_storage_api_endpoint}:{self.cloud_storage_api_endpoint_port}'
+
     def load_context(self, logger, test_context):
+        if self._cloud_storage_type == CloudStorageType.S3:
+            self._load_s3_context(logger, test_context)
+        elif self._cloud_storage_type == CloudStorageType.ABS:
+            self._load_abs_context(logger, test_context)
+
+    def _load_abs_context(self, logger, test_context):
+        storage_account = test_context.globals.get(
+            self.GLOBAL_ABS_STORAGE_ACCOUNT, None)
+        shared_key = test_context.globals.get(self.GLOBAL_ABS_STORAGE_ACCOUNT,
+                                              None)
+
+        if storage_account and shared_key:
+            logger.info("Running on Azure, setting credentials from env")
+            self.cloud_storage_azure_storage_account = storage_account
+            self.cloud_storage_azure_shared_key = shared_key
+
+            self.endpoint_url = None
+            self.cloud_storage_disable_tls = False
+        else:
+            logger.debug("Running in Dockerised env against Azurite. "
+                         "Using Azurite defualt credentials.")
+
+    def _load_s3_context(self, logger, test_context):
         """
         Update based on the test context, to e.g. consume AWS access keys in
         the globals dictionary.
@@ -318,13 +372,28 @@ class SISettings:
             logger.debug(
                 'No AWS credentials supplied, assuming minio defaults')
 
+    def get_bucket_or_container_name(self) -> str:
+        if self._cloud_storage_type == CloudStorageType.S3:
+            return self.cloud_storage_bucket
+        elif self._cloud_storage_type == CloudStorageType.ABS:
+            return self.cloud_storage_azure_container
+
     # Call this to update the extra_rp_conf
     def update_rp_conf(self, conf) -> dict[str, Any]:
+        if self._cloud_storage_type == CloudStorageType.S3:
+            conf["cloud_storage_access_key"] = self.cloud_storage_access_key
+            conf["cloud_storage_secret_key"] = self.cloud_storage_secret_key
+            conf["cloud_storage_region"] = self.cloud_storage_region
+            conf["cloud_storage_bucket"] = self.cloud_storage_bucket
+        elif self._cloud_storage_type == CloudStorageType.ABS:
+            conf[
+                'cloud_storage_azure_storage_account'] = self.cloud_storage_azure_storage_account
+            conf[
+                'cloud_storage_azure_container'] = self.cloud_storage_azure_container
+            conf[
+                'cloud_storage_azure_shared_key'] = self.cloud_storage_azure_shared_key
+
         conf["log_segment_size"] = self.log_segment_size
-        conf["cloud_storage_access_key"] = self.cloud_storage_access_key
-        conf["cloud_storage_secret_key"] = self.cloud_storage_secret_key
-        conf["cloud_storage_region"] = self.cloud_storage_region
-        conf["cloud_storage_bucket"] = self.cloud_storage_bucket
         conf["cloud_storage_enabled"] = True
         conf["cloud_storage_cache_size"] = self.cloud_storage_cache_size
         conf[
@@ -631,6 +700,12 @@ class RedpandaService(Service):
             f"ResourceSettings: dedicated_nodes={self._dedicated_nodes}")
 
         if si_settings is not None:
+            self.cloud_storage_type = self.context.injected_args.get(
+                'cloud_storage_type', CloudStorageType.S3)
+
+            if self.cloud_storage_type == CloudStorageType.ABS:
+                si_settings.use_abs()
+
             self.set_si_settings(si_settings)
         else:
             self._si_settings = None
@@ -1342,33 +1417,51 @@ class RedpandaService(Service):
         self.start_service(node, start_wasm_service)
 
     def start_si(self):
-        self.cloud_storage_client = S3Client(
-            region=self._si_settings.cloud_storage_region,
-            access_key=self._si_settings.cloud_storage_access_key,
-            secret_key=self._si_settings.cloud_storage_secret_key,
-            endpoint=self._si_settings.endpoint_url,
-            logger=self.logger,
-        )
+        if self.cloud_storage_type == CloudStorageType.S3:
+            self.cloud_storage_client = S3Client(
+                region=self._si_settings.cloud_storage_region,
+                access_key=self._si_settings.cloud_storage_access_key,
+                secret_key=self._si_settings.cloud_storage_secret_key,
+                endpoint=self._si_settings.endpoint_url,
+                logger=self.logger,
+            )
 
-        self.logger.debug(
-            f"Creating S3 bucket: {self._si_settings.cloud_storage_bucket}")
+            self.logger.debug(
+                f"Creating S3 bucket: {self._si_settings.cloud_storage_bucket}"
+            )
+        elif self.cloud_storage_type == CloudStorageType.ABS:
+            self.cloud_storage_client = ABSClient(
+                storage_account=self._si_settings.
+                cloud_storage_azure_storage_account,
+                shared_key=self._si_settings.cloud_storage_azure_shared_key,
+                endpoint=self._si_settings.endpoint_url,
+                logger=self.logger)
+            # TODO(Vlad): In CDT self._si_settings.endpoint_url will be null.
+            # Handle that and enable TLS for that case.
+            self.logger.debug(
+                f"Creating ABS container: {self._si_settings.cloud_storage_azure_container}"
+            )
+
         if not self._si_settings.bypass_bucket_creation:
             self.cloud_storage_client.create_bucket(
-                self._si_settings.cloud_storage_bucket)
+                self._si_settings.get_bucket_or_container_name())
 
     def delete_bucket_from_si(self):
+        self.logger.debug(
+            f"Deleting bucket/container: {self._si_settings.get_bucket_or_container_name()}"
+        )
         assert self.cloud_storage_client is not None
 
         failed_deletions = self.cloud_storage_client.empty_bucket(
-            self._si_settings.cloud_storage_bucket)
+            self._si_settings.get_bucket_or_container_name())
         assert len(failed_deletions) == 0
         self.cloud_storage_client.delete_bucket(
-            self._si_settings.cloud_storage_bucket)
+            self._si_settings.get_bucket_or_container_name())
 
     def get_objects_from_si(self):
         assert self.cloud_storage_client is not None
         return self.cloud_storage_client.list_objects(
-            self._si_settings.cloud_storage_bucket)
+            self._si_settings.get_bucket_or_container_name())
 
     def set_cluster_config(self,
                            values: dict,
@@ -1511,12 +1604,12 @@ class RedpandaService(Service):
         manifest_dump_limit = 10
 
         self.logger.info(
-            f"Gathering cloud storage diagnostics in bucket {self._si_settings.cloud_storage_bucket}"
+            f"Gathering cloud storage diagnostics in bucket {self._si_settings.get_bucket_or_container_name()}"
         )
 
         manifests_to_dump = []
         for o in self.cloud_storage_client.list_objects(
-                self._si_settings.cloud_storage_bucket):
+                self._si_settings.get_bucket_or_container_name()):
             key = o.key
             if key_dump_limit > 0:
                 self.logger.info(f"  {key}")
@@ -1535,7 +1628,7 @@ class RedpandaService(Service):
             for m in manifests_to_dump:
                 self.logger.info(f"Fetching manifest {m}")
                 body = self.cloud_storage_client.get_object_data(
-                    self._si_settings.cloud_storage_bucket, m)
+                    self._si_settings.get_bucket_or_container_name(), m)
                 filename = m.replace("/", "_")
                 with archive.open(filename, "w") as outstr:
                     outstr.write(body)

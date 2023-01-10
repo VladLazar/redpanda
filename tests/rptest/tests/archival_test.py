@@ -9,7 +9,7 @@
 from rptest.clients.kafka_cat import KafkaCat
 from rptest.services.cluster import cluster
 from rptest.tests.redpanda_test import RedpandaTest
-from rptest.services.redpanda import RedpandaService, SISettings
+from rptest.services.redpanda import CloudStorageType, RedpandaService, SISettings
 
 from rptest.clients.types import TopicSpec
 from rptest.clients.rpk import RpkTool
@@ -21,7 +21,7 @@ from rptest.util import (
     firewall_blocked,
 )
 
-from ducktape.mark import matrix
+from ducktape.mark import matrix, parametrize
 
 from collections import namedtuple, defaultdict
 import time
@@ -148,8 +148,6 @@ class ArchivalTest(RedpandaTest):
     def __init__(self, test_context):
         si_settings = SISettings(cloud_storage_max_connections=5,
                                  log_segment_size=self.log_segment_size)
-        self.s3_bucket_name = si_settings.cloud_storage_bucket
-
         extra_rp_conf = dict(
             log_compaction_interval_ms=self.log_compaction_interval_ms,
             log_segment_size=self.log_segment_size)
@@ -163,7 +161,11 @@ class ArchivalTest(RedpandaTest):
                                            extra_rp_conf=extra_rp_conf,
                                            si_settings=si_settings)
 
-        self._s3_port = si_settings.cloud_storage_api_endpoint_port
+        self._s3_port = self.redpanda._si_settings.cloud_storage_api_endpoint_port
+        self.s3_bucket_name = self.redpanda._si_settings.get_bucket_or_container_name()
+
+        self.logger.info(f"self._s3_port={self._s3_port}")
+        self.logger.info(f"self.s3_bucket_name={self.s3_bucket_name}")
 
         self.kafka_tools = KafkaCliTools(self.redpanda)
         self.rpk = RpkTool(self.redpanda)
@@ -181,14 +183,18 @@ class ArchivalTest(RedpandaTest):
         super().tearDown()
 
     @cluster(num_nodes=3)
-    def test_write(self):
+    @parametrize(cloud_storage_type=CloudStorageType.ABS)
+    @parametrize(cloud_storage_type=CloudStorageType.S3)
+    def test_write(self, cloud_storage_type):
         """Simpe smoke test, write data to redpanda and check if the
         data hit the S3 storage bucket"""
         self.kafka_tools.produce(self.topic, 10000, 1024)
         validate(self._quick_verify, self.logger, 90)
 
     @cluster(num_nodes=3, log_allow_list=CONNECTION_ERROR_LOGS)
-    def test_isolate(self):
+    @parametrize(cloud_storage_type=CloudStorageType.ABS)
+    @parametrize(cloud_storage_type=CloudStorageType.S3)
+    def test_isolate(self, cloud_storage_type):
         """Verify that our isolate/rejoin facilities actually work"""
         with firewall_blocked(self.redpanda.nodes, self._s3_port):
             self.kafka_tools.produce(self.topic, 10000, 1024)
@@ -209,7 +215,9 @@ class ArchivalTest(RedpandaTest):
                     f"Bucket should be empty or contain only {topic_manifest_id}, but contains {keys[0]}"
 
     @cluster(num_nodes=3, log_allow_list=CONNECTION_ERROR_LOGS)
-    def test_reconnect(self):
+    @parametrize(cloud_storage_type=CloudStorageType.ABS)
+    @parametrize(cloud_storage_type=CloudStorageType.S3)
+    def test_reconnect(self, cloud_storage_type):
         """Disconnect redpanda from S3, write data, connect redpanda to S3
         and check that the data is uploaded"""
         with firewall_blocked(self.redpanda.nodes, self._s3_port):
@@ -221,7 +229,9 @@ class ArchivalTest(RedpandaTest):
         validate(self._quick_verify, self.logger, 90)
 
     @cluster(num_nodes=3, log_allow_list=CONNECTION_ERROR_LOGS)
-    def test_one_node_reconnect(self):
+    @parametrize(cloud_storage_type=CloudStorageType.ABS)
+    @parametrize(cloud_storage_type=CloudStorageType.S3)
+    def test_one_node_reconnect(self, cloud_storage_type):
         """Disconnect one redpanda node from S3, write data, connect redpanda to S3
         and check that the data is uploaded"""
         self.kafka_tools.produce(self.topic, 1000, 1024)
@@ -235,7 +245,9 @@ class ArchivalTest(RedpandaTest):
         validate(self._quick_verify, self.logger, 90)
 
     @cluster(num_nodes=3, log_allow_list=CONNECTION_ERROR_LOGS)
-    def test_connection_drop(self):
+    @parametrize(cloud_storage_type=CloudStorageType.ABS)
+    @parametrize(cloud_storage_type=CloudStorageType.S3)
+    def test_connection_drop(self, cloud_storage_type):
         """Disconnect redpanda from S3 during the active upload, restore connection
         and check that everything is uploaded"""
         self.kafka_tools.produce(self.topic, 10000, 1024)
@@ -247,7 +259,9 @@ class ArchivalTest(RedpandaTest):
         validate(self._quick_verify, self.logger, 90)
 
     @cluster(num_nodes=3, log_allow_list=CONNECTION_ERROR_LOGS)
-    def test_connection_flicker(self):
+    @parametrize(cloud_storage_type=CloudStorageType.ABS)
+    @parametrize(cloud_storage_type=CloudStorageType.S3)
+    def test_connection_flicker(self, cloud_storage_type):
         """Disconnect redpanda from S3 during the active upload for short period of time
         during upload and check that everything is uploaded"""
         con_enabled = True
@@ -264,7 +278,9 @@ class ArchivalTest(RedpandaTest):
         validate(self._quick_verify, self.logger, 90)
 
     @cluster(num_nodes=3)
-    def test_single_partition_leadership_transfer(self):
+    @parametrize(cloud_storage_type=CloudStorageType.ABS)
+    @parametrize(cloud_storage_type=CloudStorageType.S3)
+    def test_single_partition_leadership_transfer(self, cloud_storage_type):
         """Start uploading data, restart leader node of the partition 0 to trigger the
         leadership transfer, continue upload, verify S3 bucket content"""
         self.kafka_tools.produce(self.topic, 5000, 1024)
@@ -279,7 +295,9 @@ class ArchivalTest(RedpandaTest):
         validate(self._cross_node_verify, self.logger, 90)
 
     @cluster(num_nodes=3)
-    def test_all_partitions_leadership_transfer(self):
+    @parametrize(cloud_storage_type=CloudStorageType.ABS)
+    @parametrize(cloud_storage_type=CloudStorageType.S3)
+    def test_all_partitions_leadership_transfer(self, cloud_storage_type):
         """Start uploading data, restart leader nodes of all partitions to trigger the
         leadership transfer, continue upload, verify S3 bucket content"""
         self.kafka_tools.produce(self.topic, 5000, 1024)
@@ -295,8 +313,8 @@ class ArchivalTest(RedpandaTest):
         validate(self._cross_node_verify, self.logger, 90)
 
     @cluster(num_nodes=3)
-    @matrix(acks=[-1, 0, 1])
-    def test_timeboxed_uploads(self, acks):
+    @matrix(acks=[-1, 0, 1], cloud_storage_type=[CloudStorageType.ABS, CloudStorageType.S3])
+    def test_timeboxed_uploads(self, acks, cloud_storage_type):
         """This test checks segment upload time limit. The feature is enabled in the
         configuration. The configuration defines maximum time interval between uploads.
         If the option is set then redpanda will start uploading a segment partially if
@@ -373,8 +391,8 @@ class ArchivalTest(RedpandaTest):
         validate(check_upload, self.logger, 90)
 
     @cluster(num_nodes=3, log_allow_list=CONNECTION_ERROR_LOGS)
-    @matrix(acks=[1, -1])
-    def test_retention_archival_coordination(self, acks):
+    @matrix(acks=[1, -1], cloud_storage_type=[CloudStorageType.ABS, CloudStorageType.S3])
+    def test_retention_archival_coordination(self, acks, cloud_storage_type):
         """
         Test that only archived segments can be evicted and that eviction
         restarts once the segments have been archived.
