@@ -64,6 +64,7 @@ private:
    [] relative_offset_index
    [] relative_time_index
    [] position_index
+   1 byte  - batch_timestamps_are_monotonic
  */
 struct index_state
   : serde::envelope<index_state, serde::version<5>, serde::compat_version<4>> {
@@ -92,6 +93,10 @@ struct index_state
     fragmented_vector<uint32_t> relative_offset_index;
     fragmented_vector<uint32_t> relative_time_index;
     fragmented_vector<uint64_t> position_index;
+
+    // flag indicating whether the maximum timestamp on the batches
+    // of this segment are monontonically increasing.
+    bool batch_timestamps_are_monotonic{true};
 
     size_t size() const { return relative_offset_index.size(); }
 
@@ -161,6 +166,10 @@ struct index_state
     void serde_write(iobuf&) const;
     friend void read_nested(iobuf_parser&, index_state&, const size_t);
 
+    void update_batch_timestamps_are_monotonic(bool pred) {
+        batch_timestamps_are_monotonic = batch_timestamps_are_monotonic && pred;
+    }
+
 private:
     void apply_offset_to_relative_time_index() {
         for (size_t i = 0; i < relative_time_index.size(); ++i) {
@@ -179,7 +188,8 @@ private:
       , max_timestamp(o.max_timestamp)
       , relative_offset_index(o.relative_offset_index.copy())
       , relative_time_index(o.relative_time_index.copy())
-      , position_index(o.position_index.copy()) {}
+      , position_index(o.position_index.copy())
+      , batch_timestamps_are_monotonic(o.batch_timestamps_are_monotonic) {}
 };
 
 } // namespace storage

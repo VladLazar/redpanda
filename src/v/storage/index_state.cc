@@ -105,7 +105,9 @@ std::ostream& operator<<(std::ostream& o, const index_state& s) {
              << ", base_offset:" << s.base_offset
              << ", max_offset:" << s.max_offset
              << ", base_timestamp:" << s.base_timestamp
-             << ", max_timestamp:" << s.max_timestamp << ", index("
+             << ", max_timestamp:" << s.max_timestamp
+             << ", batch_timestamps_are_monotonic:"
+             << s.batch_timestamps_are_monotonic << ", index("
              << s.relative_offset_index.size() << ","
              << s.relative_time_index.size() << "," << s.position_index.size()
              << ")}";
@@ -123,6 +125,7 @@ void index_state::serde_write(iobuf& out) const {
     write(tmp, relative_offset_index.copy());
     write(tmp, relative_time_index.copy());
     write(tmp, position_index.copy());
+    write(tmp, batch_timestamps_are_monotonic);
 
     crc::crc32c crc;
     crc_extend_iobuf(crc, tmp);
@@ -149,6 +152,7 @@ void read_nested(
         in.skip(sizeof(int8_t));
         st = serde_compat::index_state_serde::decode(in);
         st.apply_offset_to_relative_time_index();
+        st.batch_timestamps_are_monotonic = false;
         return;
     }
 
@@ -198,6 +202,9 @@ void read_nested(
 
     if (compat_version < index_state::offset_timestamps_serde_version) {
         st.apply_offset_to_relative_time_index();
+        st.batch_timestamps_are_monotonic = false;
+    } else {
+        read_nested(p, st.batch_timestamps_are_monotonic, 0U);
     }
 }
 
