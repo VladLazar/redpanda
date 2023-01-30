@@ -61,6 +61,8 @@ struct index_state
     fragmented_vector<uint32_t> relative_time_index;
     fragmented_vector<uint64_t> position_index;
 
+    size_t size() const { return relative_offset_index.size(); }
+
     bool empty() const { return relative_offset_index.empty(); }
 
     void
