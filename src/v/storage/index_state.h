@@ -21,6 +21,36 @@
 #include <optional>
 
 namespace storage {
+
+/*
+ * In order to be able to represent negative time deltas (required for
+ * out of order timestamps, the time delta stored in 'index_state' is
+ * offset by 2^31. The 'offset_time_index' class below deals with
+ * this translation. The range for time deltas is roughly from -596h to +596h.
+ */
+class offset_time_index {
+public:
+    static constexpr model::timestamp::type offset = 2147483648; // 2^31
+    static constexpr model::timestamp::type delta_time_min = -offset;
+    static constexpr model::timestamp::type delta_time_max = offset - 1;
+
+    explicit offset_time_index(model::timestamp ts)
+      : _val(static_cast<uint32_t>(
+        std::clamp(ts(), delta_time_min, delta_time_max) + offset)){};
+
+    uint32_t operator()() const { return _val - static_cast<uint32_t>(offset); }
+
+private:
+    explicit offset_time_index(uint32_t val)
+      : _val(val) {}
+
+    uint32_t raw_value() const { return _val; }
+
+    uint32_t _val;
+
+    friend struct index_state;
+};
+
 /* Fileformat:
    1 byte  - version
    4 bytes - size - does not include the version or size
@@ -36,7 +66,9 @@ namespace storage {
    [] position_index
  */
 struct index_state
-  : serde::envelope<index_state, serde::version<4>, serde::compat_version<4>> {
+  : serde::envelope<index_state, serde::version<5>, serde::compat_version<4>> {
+    static constexpr auto offset_timestamps_serde_version = 5;
+
     index_state() = default;
     index_state(index_state&&) noexcept = default;
     index_state& operator=(index_state&&) noexcept = default;
@@ -65,10 +97,10 @@ struct index_state
 
     bool empty() const { return relative_offset_index.empty(); }
 
-    void
-    add_entry(uint32_t relative_offset, uint32_t relative_time, uint64_t pos) {
+    void add_entry(
+      uint32_t relative_offset, offset_time_index relative_time, uint64_t pos) {
         relative_offset_index.push_back(relative_offset);
-        relative_time_index.push_back(relative_time);
+        relative_time_index.push_back(relative_time.raw_value());
         position_index.push_back(pos);
     }
     void pop_back() {
@@ -79,9 +111,37 @@ struct index_state
             non_data_timestamps = false;
         }
     }
-    std::tuple<uint32_t, uint32_t, uint64_t> get_entry(size_t i) {
+    std::tuple<uint32_t, offset_time_index, uint64_t> get_entry(size_t i) {
         return {
-          relative_offset_index[i], relative_time_index[i], position_index[i]};
+          relative_offset_index[i],
+          offset_time_index{relative_time_index[i]},
+          position_index[i]};
+    }
+
+    std::optional<std::tuple<uint32_t, offset_time_index, uint64_t>>
+    find_entry(model::timestamp ts) {
+        const auto idx = offset_time_index{ts};
+
+        auto it = std::lower_bound(
+          std::begin(relative_time_index),
+          std::end(relative_time_index),
+          idx.raw_value(),
+          std::less<uint32_t>{});
+        if (it == relative_offset_index.end()) {
+            return std::nullopt;
+        }
+
+        const auto dist = std::distance(relative_offset_index.begin(), it);
+
+        // lower_bound will place us on the first batch in the index that has
+        // 'max_timestamp' greater than 'ts'. Since not every batch is indexed,
+        // it's not guaranteed* that 'ts' will be present in the batch
+        // (i.e. 'ts > first_timestamp'). For this reason, we go back one batch.
+        //
+        // *In the case where lower_bound places on the first batch, we'll
+        // start the timequery from the beggining of the segment as the user
+        // data batch is always indexed.
+        return get_entry(std::max(dist - 1, decltype(dist){0}));
     }
 
     bool maybe_index(
@@ -102,6 +162,13 @@ struct index_state
     friend void read_nested(iobuf_parser&, index_state&, const size_t);
 
 private:
+    void apply_offset_to_relative_time_index() {
+        for (size_t i = 0; i < relative_time_index.size(); ++i) {
+            const model::timestamp ts{relative_time_index[i]};
+            relative_time_index[i] = offset_time_index{ts}.raw_value();
+        }
+    }
+
     bool non_data_timestamps{false};
 
     index_state(const index_state& o) noexcept

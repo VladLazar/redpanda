@@ -52,7 +52,8 @@ bool index_state::maybe_index(
     // by virtue of being the first in the segment.
     if (user_data && non_data_timestamps) {
         vassert(relative_time_index.size() == 1, "");
-        relative_time_index[0] = uint32_t(first_timestamp());
+        relative_time_index[0] = static_cast<uint32_t>(
+          offset_time_index::offset);
         base_timestamp = first_timestamp;
         max_timestamp = first_timestamp;
         non_data_timestamps = false;
@@ -88,10 +89,10 @@ bool index_state::maybe_index(
     }
     // always saving the first batch simplifies a lot of book keeping
     if ((accumulator >= step && user_data) || retval) {
-        // We know that a segment cannot be > 4GB
         add_entry(
+          // We know that a segment cannot be > 4GB
           batch_base_offset() - base_offset(),
-          std::max(last_timestamp() - base_timestamp(), int64_t{0}),
+          offset_time_index{last_timestamp - base_timestamp},
           starting_position_in_file);
 
         retval = true;
@@ -147,6 +148,7 @@ void read_nested(
     if (compat_version == serde_compat::index_state_serde::ondisk_version) {
         in.skip(sizeof(int8_t));
         st = serde_compat::index_state_serde::decode(in);
+        st.apply_offset_to_relative_time_index();
         return;
     }
 
@@ -193,6 +195,10 @@ void read_nested(
     read_nested(p, st.relative_offset_index, 0U);
     read_nested(p, st.relative_time_index, 0U);
     read_nested(p, st.position_index, 0U);
+
+    if (compat_version < index_state::offset_timestamps_serde_version) {
+        st.apply_offset_to_relative_time_index();
+    }
 }
 
 } // namespace storage
