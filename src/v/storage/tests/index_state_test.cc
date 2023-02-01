@@ -7,26 +7,28 @@
 
 #include <boost/test/unit_test.hpp>
 
-static storage::index_state
-make_random_index_state(bool with_time_ofsetting = true) {
+static storage::index_state make_random_index_state(
+  storage::offset_delta_time apply_offset = storage::offset_delta_time::yes) {
     storage::index_state st;
     st.bitflags = random_generators::get_int<uint32_t>();
     st.base_offset = model::offset(random_generators::get_int<int64_t>());
     st.max_offset = model::offset(random_generators::get_int<int64_t>());
     st.base_timestamp = model::timestamp(random_generators::get_int<int64_t>());
     st.max_timestamp = model::timestamp(random_generators::get_int<int64_t>());
-    st.batch_timestamps_are_monotonic = with_time_ofsetting;
+    st.batch_timestamps_are_monotonic = apply_offset
+                                        == storage::offset_delta_time::yes;
 
     const auto n = random_generators::get_int(1, 10000);
     for (auto i = 0; i < n; ++i) {
         st.add_entry(
           random_generators::get_int<uint32_t>(),
           storage::offset_time_index{
-            model::timestamp{random_generators::get_int<int64_t>()}},
+            model::timestamp{random_generators::get_int<int64_t>()},
+            apply_offset},
           random_generators::get_int<uint64_t>());
     }
 
-    if (!with_time_ofsetting) {
+    if (apply_offset == storage::offset_delta_time::no) {
         fragmented_vector<uint32_t> time_index;
         for (auto i = 0; i < n; ++i) {
             time_index.push_back(random_generators::get_int<uint32_t>());
@@ -106,7 +108,7 @@ BOOST_AUTO_TEST_CASE(serde_basic) {
 BOOST_AUTO_TEST_CASE(serde_before_and_after_time_ofsetting) {
     for (int i = 0; i < 100; ++i) {
         // Create index without time ofsetting
-        auto input = make_random_index_state(false);
+        auto input = make_random_index_state(storage::offset_delta_time::no);
         const auto input_copy = input.copy();
         auto buf = serde::to_iobuf(std::move(input));
         set_version(buf, 4);
@@ -128,7 +130,7 @@ BOOST_AUTO_TEST_CASE(serde_before_and_after_time_ofsetting) {
 // accept decoding supported old version
 BOOST_AUTO_TEST_CASE(serde_supported_deprecated) {
     for (int i = 0; i < 100; ++i) {
-        auto input = make_random_index_state(false);
+        auto input = make_random_index_state(storage::offset_delta_time::no);
         const auto output = serde::from_iobuf<storage::index_state>(
           storage::serde_compat::index_state_serde::encode(input));
 
@@ -139,7 +141,7 @@ BOOST_AUTO_TEST_CASE(serde_supported_deprecated) {
 // reject decoding unsupported old versions
 BOOST_AUTO_TEST_CASE(serde_unsupported_deprecated) {
     auto test = [](int version) {
-        auto input = make_random_index_state(false);
+        auto input = make_random_index_state(storage::offset_delta_time::no);
         auto buf = storage::serde_compat::index_state_serde::encode(input);
         set_version(buf, version);
 
@@ -160,7 +162,7 @@ BOOST_AUTO_TEST_CASE(serde_unsupported_deprecated) {
 
 // decoding should fail if all the data isn't available
 BOOST_AUTO_TEST_CASE(serde_clipped) {
-    auto input = make_random_index_state(false);
+    auto input = make_random_index_state(storage::offset_delta_time::no);
     auto buf = serde::to_iobuf(std::move(input));
 
     // trim off some data from the end
@@ -178,7 +180,7 @@ BOOST_AUTO_TEST_CASE(serde_clipped) {
 
 // decoding deprecated format should fail if not all data is available
 BOOST_AUTO_TEST_CASE(serde_deprecated_clipped) {
-    auto input = make_random_index_state(false);
+    auto input = make_random_index_state(storage::offset_delta_time::no);
     auto buf = storage::serde_compat::index_state_serde::encode(input);
 
     // trim off some data from the end
@@ -214,7 +216,7 @@ BOOST_AUTO_TEST_CASE(serde_crc) {
 }
 
 BOOST_AUTO_TEST_CASE(serde_deprecated_crc) {
-    auto input = make_random_index_state(false);
+    auto input = make_random_index_state(storage::offset_delta_time::no);
     auto good_buf = storage::serde_compat::index_state_serde::encode(input);
 
     auto bad_bytes = iobuf_to_bytes(good_buf);

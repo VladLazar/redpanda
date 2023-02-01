@@ -465,7 +465,7 @@ class RpkTool:
         if fetch_max_bytes is not None:
             cmd += ["--fetch-max-bytes", str(fetch_max_bytes)]
         if offset is not None:
-            cmd += ["-o", f"{n}"]
+            cmd += ["-o", f"{offset}"]
         if partition is not None:
             cmd += ["-p", f"{partition}"]
         if quiet:

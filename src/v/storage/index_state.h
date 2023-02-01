@@ -12,15 +12,20 @@
 #pragma once
 
 #include "bytes/iobuf.h"
+#include "features/feature_table.h"
 #include "model/fundamental.h"
 #include "model/timestamp.h"
 #include "serde/envelope.h"
 #include "utils/fragmented_vector.h"
 
+#include <seastar/core/sharded.hh>
+
 #include <cstdint>
 #include <optional>
 
 namespace storage {
+
+using offset_delta_time = ss::bool_class<struct offset_delta_time_tag>;
 
 /*
  * In order to be able to represent negative time deltas (required for
@@ -34,11 +39,27 @@ public:
     static constexpr model::timestamp::type delta_time_min = -offset;
     static constexpr model::timestamp::type delta_time_max = offset - 1;
 
-    explicit offset_time_index(model::timestamp ts)
-      : _val(static_cast<uint32_t>(
-        std::clamp(ts(), delta_time_min, delta_time_max) + offset)){};
+    explicit offset_time_index(
+      model::timestamp ts, offset_delta_time apply_offset)
+      : _apply_offset(apply_offset) {
+        if (_apply_offset == offset_delta_time::yes) {
+            _val = static_cast<uint32_t>(
+              std::clamp(ts(), delta_time_min, delta_time_max) + offset);
+        } else {
+            _val = _val = static_cast<uint32_t>(std::clamp(
+              ts(),
+              model::timestamp::type{std::numeric_limits<uint32_t>::min()},
+              model::timestamp::type{std::numeric_limits<uint32_t>::max()}));
+        }
+    }
 
-    uint32_t operator()() const { return _val - static_cast<uint32_t>(offset); }
+    uint32_t operator()() const {
+        if (_apply_offset == offset_delta_time::yes) {
+            return _val - static_cast<uint32_t>(offset);
+        } else {
+            return _val;
+        }
+    }
 
 private:
     explicit offset_time_index(uint32_t val)
@@ -46,6 +67,7 @@ private:
 
     uint32_t raw_value() const { return _val; }
 
+    offset_delta_time _apply_offset;
     uint32_t _val;
 
     friend struct index_state;
@@ -71,6 +93,7 @@ struct index_state
     static constexpr auto offset_timestamps_serde_version = 5;
 
     index_state() = default;
+
     index_state(index_state&&) noexcept = default;
     index_state& operator=(index_state&&) noexcept = default;
     index_state& operator=(const index_state&) = delete;
@@ -125,7 +148,7 @@ struct index_state
 
     std::optional<std::tuple<uint32_t, offset_time_index, uint64_t>>
     find_entry(model::timestamp ts) {
-        const auto idx = offset_time_index{ts};
+        const auto idx = offset_time_index{ts, apply_offset};
 
         auto it = std::lower_bound(
           std::begin(relative_time_index),
@@ -159,7 +182,8 @@ struct index_state
       model::timestamp last_timestamp,
       bool user_data);
 
-    friend bool operator==(const index_state&, const index_state&) = default;
+    friend bool operator==(const index_state& lhs, const index_state& rhs)
+      = default;
 
     friend std::ostream& operator<<(std::ostream&, const index_state&);
 
@@ -170,15 +194,25 @@ struct index_state
         batch_timestamps_are_monotonic = batch_timestamps_are_monotonic && pred;
     }
 
+    void allow_time_delta_ofsetting() { apply_offset = offset_delta_time::yes; }
+
 private:
-    void apply_offset_to_relative_time_index() {
+    void maybe_apply_offset_to_relative_time_index() {
+        if (apply_offset == offset_delta_time::no) {
+            return;
+        }
+
         for (size_t i = 0; i < relative_time_index.size(); ++i) {
             const model::timestamp ts{relative_time_index[i]};
-            relative_time_index[i] = offset_time_index{ts}.raw_value();
+            relative_time_index[i]
+              = offset_time_index{ts, offset_delta_time::yes}.raw_value();
         }
     }
 
     bool non_data_timestamps{false};
+
+    // TODO: Remove once all systems in the field have been updated to v23.1.
+    offset_delta_time apply_offset{false};
 
     index_state(const index_state& o) noexcept
       : bitflags(o.bitflags)
@@ -189,7 +223,8 @@ private:
       , relative_offset_index(o.relative_offset_index.copy())
       , relative_time_index(o.relative_time_index.copy())
       , position_index(o.position_index.copy())
-      , batch_timestamps_are_monotonic(o.batch_timestamps_are_monotonic) {}
+      , batch_timestamps_are_monotonic(o.batch_timestamps_are_monotonic)
+      , apply_offset(o.apply_offset) {}
 };
 
 } // namespace storage

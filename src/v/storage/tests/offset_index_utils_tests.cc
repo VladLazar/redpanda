@@ -30,7 +30,15 @@ public:
           segment_full_path::mock("In memory iobuf"),
           ss::file(ss::make_shared(tmpbuf_file(_data))),
           _base_offset,
-          storage::segment_index::default_data_buffer_step));
+          storage::segment_index::default_data_buffer_step,
+          _feature_table));
+    }
+
+    ss::future<> start() {
+        return _feature_table.start().then([this]() {
+            return _feature_table.invoke_on_all(
+              [](features::feature_table& f) { f.testing_activate_all(); });
+        });
     }
 
     const model::record_batch_header
@@ -52,10 +60,13 @@ public:
     model::record_batch_header _base_hdr;
     storage::segment_index_ptr _idx;
     tmpbuf_file::store_t _data;
+    ss::sharded<features::feature_table> _feature_table;
 };
 } // namespace storage
 
 FIXTURE_TEST(index_round_trip, offset_index_utils_fixture) {
+    start().get();
+
     BOOST_CHECK(true);
     info("index: {}", _idx);
     for (uint32_t i = 0; i < 1024; ++i) {
@@ -75,6 +86,8 @@ FIXTURE_TEST(index_round_trip, offset_index_utils_fixture) {
 }
 
 FIXTURE_TEST(bucket_bug1, offset_index_utils_fixture) {
+    start().get();
+
     info("index: {}", _idx);
     info("Testing bucket find");
     _idx->maybe_track(modify_get(model::offset{824}, 155103), 0); // indexed
@@ -102,6 +115,8 @@ FIXTURE_TEST(bucket_bug1, offset_index_utils_fixture) {
     }
 }
 FIXTURE_TEST(bucket_truncate, offset_index_utils_fixture) {
+    start().get();
+
     info("index: {}", _idx);
     info("Testing bucket truncate");
     _idx->maybe_track(modify_get(model::offset{824}, 155103), 0); // indexed

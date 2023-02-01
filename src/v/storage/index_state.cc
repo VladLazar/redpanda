@@ -92,7 +92,7 @@ bool index_state::maybe_index(
         add_entry(
           // We know that a segment cannot be > 4GB
           batch_base_offset() - base_offset(),
-          offset_time_index{last_timestamp - base_timestamp},
+          offset_time_index{last_timestamp - base_timestamp, apply_offset},
           starting_position_in_file);
 
         retval = true;
@@ -106,6 +106,7 @@ std::ostream& operator<<(std::ostream& o, const index_state& s) {
              << ", max_offset:" << s.max_offset
              << ", base_timestamp:" << s.base_timestamp
              << ", max_timestamp:" << s.max_timestamp
+             << ", apply_offset:" << s.apply_offset
              << ", batch_timestamps_are_monotonic:"
              << s.batch_timestamps_are_monotonic << ", index("
              << s.relative_offset_index.size() << ","
@@ -151,7 +152,7 @@ void read_nested(
     if (compat_version == serde_compat::index_state_serde::ondisk_version) {
         in.skip(sizeof(int8_t));
         st = serde_compat::index_state_serde::decode(in);
-        st.apply_offset_to_relative_time_index();
+        st.maybe_apply_offset_to_relative_time_index();
         st.batch_timestamps_are_monotonic = false;
         return;
     }
@@ -201,7 +202,7 @@ void read_nested(
     read_nested(p, st.position_index, 0U);
 
     if (compat_version < index_state::offset_timestamps_serde_version) {
-        st.apply_offset_to_relative_time_index();
+        st.maybe_apply_offset_to_relative_time_index();
         st.batch_timestamps_are_monotonic = false;
     } else {
         read_nested(p, st.batch_timestamps_are_monotonic, 0U);

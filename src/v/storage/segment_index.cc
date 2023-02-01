@@ -43,19 +43,36 @@ segment_index::segment_index(
   segment_full_path path,
   model::offset base,
   size_t step,
+  ss::sharded<features::feature_table>& feature_table,
   debug_sanitize_files sanitize)
   : _path(std::move(path))
   , _step(step)
+  , _feature_table(std::ref(feature_table))
   , _sanitize(sanitize) {
     _state.base_offset = base;
+    if (
+      storage::internal::should_apply_delta_time_offset(_feature_table)
+      == offset_delta_time::yes) {
+        _state.allow_time_delta_ofsetting();
+    }
 }
 
 segment_index::segment_index(
-  segment_full_path path, ss::file mock_file, model::offset base, size_t step)
+  segment_full_path path,
+  ss::file mock_file,
+  model::offset base,
+  size_t step,
+  ss::sharded<features::feature_table>& feature_table)
   : _path(std::move(path))
   , _step(step)
+  , _feature_table(std::ref(feature_table))
   , _mock_file(mock_file) {
     _state.base_offset = base;
+    if (
+      storage::internal::should_apply_delta_time_offset(_feature_table)
+      == offset_delta_time::yes) {
+        _state.allow_time_delta_ofsetting();
+    }
 }
 
 ss::future<ss::file> segment_index::open() {
@@ -72,6 +89,13 @@ void segment_index::reset() {
     auto base = _state.base_offset;
     _state = {};
     _state.base_offset = base;
+
+    if (
+      storage::internal::should_apply_delta_time_offset(_feature_table)
+      == offset_delta_time::yes) {
+        _state.allow_time_delta_ofsetting();
+    }
+
     _acc = 0;
 }
 

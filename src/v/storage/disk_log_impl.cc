@@ -54,13 +54,18 @@ using namespace std::literals::chrono_literals;
 namespace storage {
 
 disk_log_impl::disk_log_impl(
-  ntp_config cfg, log_manager& manager, segment_set segs, kvstore& kvstore)
+  ntp_config cfg,
+  log_manager& manager,
+  segment_set segs,
+  kvstore& kvstore,
+  ss::sharded<features::feature_table>& feature_table)
   : log::impl(std::move(cfg))
   , _manager(manager)
   , _segment_size_jitter(
       internal::random_jitter(_manager.config().segment_size_jitter))
   , _segs(std::move(segs))
   , _kvstore(kvstore)
+  , _feature_table(feature_table)
   , _start_offset(read_start_offset())
   , _lock_mngr(_segs)
   , _max_segment_size(compute_max_segment_size())
@@ -389,7 +394,8 @@ ss::future<> disk_log_impl::do_compact(compaction_config cfg) {
           cfg,
           _probe,
           *_readers_cache,
-          _manager.resources());
+          _manager.resources(),
+          storage::internal::should_apply_delta_time_offset(_feature_table));
 
         vlog(
           gclog.debug,
@@ -522,7 +528,7 @@ ss::future<compaction_result> disk_log_impl::compact_adjacent_segments(
     auto staging_path = target->reader().path().to_compaction_staging();
     auto [replacement, generations]
       = co_await storage::internal::make_concatenated_segment(
-        staging_path, segments, cfg, _manager.resources());
+        staging_path, segments, cfg, _manager.resources(), _feature_table);
 
     // compact the combined data in the replacement segment. the partition size
     // tracking needs to be adjusted as compaction routines assume the segment
@@ -535,7 +541,8 @@ ss::future<compaction_result> disk_log_impl::compact_adjacent_segments(
       cfg,
       _probe,
       *_readers_cache,
-      _manager.resources());
+      _manager.resources(),
+      storage::internal::should_apply_delta_time_offset(_feature_table));
     _probe.delete_segment(*replacement.get());
     vlog(gclog.debug, "Final compacted segment {}", replacement);
 
@@ -1673,9 +1680,13 @@ std::ostream& operator<<(std::ostream& o, const disk_log_impl& d) {
 }
 
 log make_disk_backed_log(
-  ntp_config cfg, log_manager& manager, segment_set segs, kvstore& kvstore) {
+  ntp_config cfg,
+  log_manager& manager,
+  segment_set segs,
+  kvstore& kvstore,
+  ss::sharded<features::feature_table>& feature_table) {
     auto ptr = ss::make_shared<disk_log_impl>(
-      std::move(cfg), manager, std::move(segs), kvstore);
+      std::move(cfg), manager, std::move(segs), kvstore, feature_table);
     return log(ptr);
 }
 
