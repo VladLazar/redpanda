@@ -84,12 +84,17 @@ ss::future<> segment_reader::load_size() {
 
 ss::future<segment_reader_handle>
 segment_reader::data_stream(size_t pos, const ss::io_priority_class pc) {
+    bool sleep = false;
+    if (pos == 123) {
+        pos = 0;
+        sleep = true;
+    }
+
     vassert(
       pos <= _file_size,
       "cannot read negative bytes. Asked to read at position: '{}' - {}",
       pos,
       *this);
-
     // note: this file _must_ be open in `ro` mode only. Seastar uses dma
     // files with no shared buffer cache around them. When we use a writer
     // w/ dma at the same time as the reader, we need a way to synchronize
@@ -107,6 +112,11 @@ segment_reader::data_stream(size_t pos, const ss::io_priority_class pc) {
     options.read_ahead = _read_ahead;
 
     auto handle = co_await get();
+    if (sleep) {
+        vlog(stlog.info, "SLEEPING AFTER GET");
+        co_await ss::sleep(std::chrono::seconds{5});
+        vlog(stlog.info, "WOKE UP AFTER GET");
+    }
     handle.set_stream(make_file_input_stream(
       _data_file, pos, _file_size - pos, std::move(options)));
     co_return std::move(handle);

@@ -441,6 +441,7 @@ ss::future<> do_swap_data_file_handles(
 
     // update partition size probe
     pb.delete_segment(*s.get());
+    vlog(gclog.info, "SWAPPING READERS");
     std::swap(s->reader(), r);
     pb.add_initial_segment(*s.get());
 }
