@@ -124,6 +124,10 @@ public:
     // low level api's are discouraged and might be deprecated
     // please use higher level API's when possible
     segment_reader& reader();
+    std::unique_ptr<ss::gate::holder> extend_lifetime() {
+        return std::make_unique<ss::gate::holder>(_gate);
+    }
+
     size_t file_size() const { return _reader.file_size(); }
     const ss::sstring filename() const { return _reader.filename(); }
     const segment_full_path& path() const { return _reader.path(); }

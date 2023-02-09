@@ -61,6 +61,7 @@ segment::segment(
   , _compaction_index(std::move(ci))
   , _cache(std::move(c))
   , _first_write(std::nullopt) {
+    r.set_owner_segment(this);
     if (_appender) {
         _appender->set_callbacks(&_appender_callbacks);
     }

@@ -422,7 +422,9 @@ ss::future<> do_swap_data_file_handles(
   ss::lw_shared_ptr<storage::segment> s,
   storage::compaction_config cfg,
   probe& pb) {
+    s->reader().set_uuid(100);
     co_await s->reader().close();
+    vlog(gclog.info, "CLOSED READER ON TARGET: target={}", s->reader());
 
     ss::sstring old_name = compacted.string();
     vlog(
@@ -436,13 +438,15 @@ ss::future<> do_swap_data_file_handles(
       s->reader().path(),
       config::shard_local_cfg().storage_read_buffer_size(),
       config::shard_local_cfg().storage_read_readahead_count(),
-      cfg.sanitize);
+      cfg.sanitize,
+      200);
+    r.set_owner_segment(s.get());
     co_await r.load_size();
 
     // update partition size probe
     pb.delete_segment(*s.get());
-    vlog(gclog.info, "SWAPPING READERS");
-    std::swap(s->reader(), r);
+    vlog(gclog.info, "SWAPPING READERS: lhs={}, rhs={}", s->reader(), r);
+    s->reader() = std::move(r);
     pb.add_initial_segment(*s.get());
 }
 

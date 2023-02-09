@@ -1500,14 +1500,16 @@ FIXTURE_TEST(adjacent_segment_compaction, storage_test_fixture) {
     c_cfg.max_collectible_offset = model::offset::max();
 
     auto& segs = disk_log->segments();
-    auto& after_last_seg = segs[1];
+    auto& after_last_seg = segs[0];
 
     auto reader_handle = after_last_seg->reader().data_stream(
       123, ss::default_priority_class());
+    auto compact_future = log.compact(c_cfg);
 
-    log.compact(c_cfg).get0();
+    auto handle = reader_handle.get();
+    handle.close().get();
 
-    reader_handle.get();
+    compact_future.get();
 
     BOOST_REQUIRE_EQUAL(disk_log->segment_count(), 3);
 

@@ -58,12 +58,16 @@ private:
     // created to just stat() a file for example.
     std::optional<ss::input_stream<char>> _stream;
 
+    size_t _uuid;
+
 public:
-    explicit segment_reader_handle(segment_reader* parent);
+    explicit segment_reader_handle(segment_reader* parent, size_t uuid = 0);
 
     segment_reader_handle(segment_reader_handle&& rhs) noexcept {
         _stream = std::exchange(rhs._stream, std::nullopt);
         _parent = std::exchange(rhs._parent, nullptr);
+        _uuid = rhs._uuid;
+
         _hook.swap_nodes(rhs._hook);
     }
 
@@ -111,7 +115,8 @@ public:
       segment_full_path filename,
       size_t buffer_size,
       unsigned read_ahead,
-      debug_sanitize_files) noexcept;
+      debug_sanitize_files,
+      uint8_t uuid = 0) noexcept;
     ~segment_reader() noexcept;
     segment_reader(segment_reader&&) noexcept;
     segment_reader& operator=(segment_reader&&) noexcept;
@@ -123,6 +128,10 @@ public:
     /// max physical byte that this reader is allowed to fetch
     void set_file_size(size_t o) { _file_size = o; }
     size_t file_size() const { return _file_size; }
+
+    void set_owner_segment(segment* const segment) { _owner_segment = segment; }
+
+    void set_uuid(uint8_t uuid) { _uuid = uuid; }
 
     /// file name
     const ss::sstring filename() const { return path(); }
@@ -146,6 +155,8 @@ public:
     ss::future<segment_reader_handle>
     data_stream(size_t pos_begin, size_t pos_end, const ss::io_priority_class);
 
+    ss::future<> swap(segment_reader);
+
 private:
     segment_full_path _path;
 
@@ -165,6 +176,12 @@ private:
     size_t _buffer_size{0};
     unsigned _read_ahead{0};
     debug_sanitize_files _sanitize;
+    segment* _owner_segment{nullptr};
+
+    uint8_t _uuid;
+
+    ss::gate _gate;
+    ss::condition_variable _outstanding_handles_condition;
 
     // Acquire a handle to use the underlying file handle
     ss::future<segment_reader_handle> get();
