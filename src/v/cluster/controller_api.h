@@ -10,6 +10,7 @@
  */
 #pragma once
 #include "cluster/controller_backend.h"
+#include "cluster/controller_stm.h"
 #include "cluster/fwd.h"
 #include "cluster/types.h"
 #include "model/fundamental.h"
@@ -34,6 +35,7 @@ class controller_api {
 public:
     controller_api(
       model::node_id,
+      ss::sharded<controller_stm>&,
       ss::sharded<controller_backend>&,
       ss::sharded<topic_table>&,
       ss::sharded<shard_table>&,
@@ -78,6 +80,15 @@ public:
 
     std::optional<ss::shard_id> shard_for(const raft::group_id& group) const;
 
+    enum class first_live_replica : uint8_t {
+        yes = 0,
+        no = 1,
+        no_live_replicas = 2
+    };
+    bool is_first_live_replica_for_ntp(const model::ntp& ntp) const;
+
+    std::optional<model::offset> get_last_applied_offset();
+
 private:
     ss::future<result<bool>> are_ntps_ready(
       absl::node_hash_map<model::node_id, std::vector<model::ntp>>,
@@ -87,6 +98,7 @@ private:
       get_remote_core_deltas(model::ntp, ss::shard_id);
 
     model::node_id _self;
+    ss::sharded<controller_stm>& _stm;
     ss::sharded<controller_backend>& _backend;
     ss::sharded<topic_table>& _topics;
     ss::sharded<shard_table>& _shard_table;

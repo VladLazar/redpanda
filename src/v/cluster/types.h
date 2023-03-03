@@ -2985,14 +2985,14 @@ struct get_partitions_cloud_storage_size_request
       serde::compat_version<0>> {
     using rpc_adl_exempt = std::true_type;
 
-    std::vector<model::ntp> partitions;
+    model::offset controller_offset;
 
     friend bool operator==(
       const get_partitions_cloud_storage_size_request&,
       const get_partitions_cloud_storage_size_request&)
       = default;
 
-    auto serde_fields() { return std::tie(partitions); }
+    auto serde_fields() { return std::tie(controller_offset); }
 };
 
 struct get_partitions_cloud_storage_size_reply
@@ -3002,15 +3002,53 @@ struct get_partitions_cloud_storage_size_reply
       serde::compat_version<0>> {
     using rpc_adl_exempt = std::true_type;
 
-    uint64_t size_bytes;
-    std::vector<model::ntp> missing_partitions;
+    errc error_code;
+    uint64_t size_bytes_on_node;
 
     friend bool operator==(
       const get_partitions_cloud_storage_size_reply&,
       const get_partitions_cloud_storage_size_reply&)
       = default;
 
-    auto serde_fields() { return std::tie(size_bytes, missing_partitions); }
+    auto serde_fields() { return std::tie(error_code, size_bytes_on_node); }
+};
+
+struct get_partitions_cloud_storage_size_simple_request
+  : serde::envelope<
+      get_partitions_cloud_storage_size_simple_request,
+      serde::version<0>,
+      serde::compat_version<0>> {
+    using rpc_adl_exempt = std::true_type;
+
+    absl::flat_hash_map<ss::shard_id, std::vector<model::ntp>> partitions;
+
+    friend bool operator==(
+      const get_partitions_cloud_storage_size_simple_request&,
+      const get_partitions_cloud_storage_size_simple_request&)
+      = default;
+
+    auto serde_fields() { return std::tie(partitions); }
+};
+
+struct get_partitions_cloud_storage_size_simple_reply
+  : serde::envelope<
+      get_partitions_cloud_storage_size_simple_reply,
+      serde::version<0>,
+      serde::compat_version<0>> {
+    using rpc_adl_exempt = std::true_type;
+
+    uint64_t total_size_bytes{0};
+    absl::flat_hash_map<ss::shard_id, std::vector<model::ntp>>
+      missing_partitions;
+
+    friend bool operator==(
+      const get_partitions_cloud_storage_size_simple_reply&,
+      const get_partitions_cloud_storage_size_simple_reply&)
+      = default;
+
+    auto serde_fields() {
+        return std::tie(total_size_bytes, missing_partitions);
+    }
 };
 
 struct revert_cancel_partition_move_cmd_data

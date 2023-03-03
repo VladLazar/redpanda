@@ -369,6 +369,7 @@ controller::start(cluster_discovery& discovery, ss::abort_source& shard0_as) {
       .then([this] {
           return _api.start(
             _raft0->self().id(),
+            std::ref(_stm),
             std::ref(_backend),
             std::ref(_tp_state),
             std::ref(_shard_table),

@@ -135,6 +135,11 @@
             "name": "get_partitions_cloud_storage_size",
             "input_type": "get_partitions_cloud_storage_size_request",
             "output_type": "get_partitions_cloud_storage_size_reply"
+        },
+        {
+            "name": "get_partitions_cloud_storage_size_simple",
+            "input_type": "get_partitions_cloud_storage_size_simple_request",
+            "output_type": "get_partitions_cloud_storage_size_simple_reply"
         }
     ]
 }

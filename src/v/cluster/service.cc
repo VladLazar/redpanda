@@ -675,31 +675,112 @@ ss::future<transfer_leadership_reply> service::transfer_leadership(
     }
 }
 
-ss::future<get_partitions_cloud_storage_size_reply>
-service::get_partitions_cloud_storage_size(
-  get_partitions_cloud_storage_size_request&& req, rpc::streaming_context&) {
+// ss::future<get_partitions_cloud_storage_size_reply>
+// service::get_partitions_cloud_storage_size(
+//   get_partitions_cloud_storage_size_request&& req, rpc::streaming_context&) {
+//     return ss::with_scheduling_group(get_scheduling_group(), [this, req]() {
+//         return do_get_partitions_cloud_storage_size(req);
+//     });
+// }
+//
+// ss::future<get_partitions_cloud_storage_size_reply>
+// service::do_get_partitions_cloud_storage_size(
+//   get_partitions_cloud_storage_size_request req) {
+//     co_return co_await ss::smp::submit_to(
+//       cluster::controller_stm_shard, [this, req]() {
+//           const auto current_last_applied
+//             = _api.local().get_last_applied_offset();
+//
+//           if (!current_last_applied) {
+//               return get_partitions_cloud_storage_size_reply{
+//                 .error_code = cluster::errc::invalid_request,
+//                 .size_bytes_on_node = 0};
+//           }
+//
+//           if (*current_last_applied > req.controller_offset) {
+//               return get_partitions_cloud_storage_size_reply{
+//                 .error_code = cluster::errc::update_in_progress,
+//                 .size_bytes_on_node = 0};
+//           }
+//
+//           uint64_t total_size{0};
+//           const auto& partitions = _partition_manager.local().partitions();
+//           for (const auto& [ntp, partition] : partitions) {
+//               const auto first_live_replica
+//                 = _api.local().is_first_live_replica_for_ntp(ntp);
+//
+//               if (
+//                 first_live_replica
+//                 == controller_api::first_live_replica::no_live_replicas) {
+//                   // bail
+//               }
+//
+//               if (
+//                 first_live_replica ==
+//                 controller_api::first_live_replica::yes) {
+//                   total_size += partition->cloud_log_size();
+//               }
+//           }
+//
+//           return get_partitions_cloud_storage_size_reply{
+//             .size_bytes_on_node = total_size};
+//       });
+// }
+ss::future<get_partitions_cloud_storage_size_simple_reply>
+service::get_partitions_cloud_storage_size_simple(
+  get_partitions_cloud_storage_size_simple_request&& req,
+  rpc::streaming_context&) {
     return ss::with_scheduling_group(get_scheduling_group(), [this, req]() {
-        return do_get_partitions_cloud_storage_size(req);
+        return do_get_partitions_cloud_storage_size_simple(req);
     });
 }
 
-ss::future<get_partitions_cloud_storage_size_reply>
-service::do_get_partitions_cloud_storage_size(
-  get_partitions_cloud_storage_size_request req) {
-    const auto& partitions_on_shard = _partition_manager.local().partitions();
+ss::future<get_partitions_cloud_storage_size_simple_reply>
+service::do_get_partitions_cloud_storage_size_simple(
+  get_partitions_cloud_storage_size_simple_request req) {
+    struct map_res_type {
+        uint64_t total_size{0};
+        std::vector<model::ntp> missing_partitions;
+        ss::shard_id shard;
+    };
 
-    uint64_t total_size = 0;
-    std::vector<model::ntp> not_found;
-    for (const auto& p : req.partitions) {
-        auto pm_iter = partitions_on_shard.find(p);
-        if (pm_iter != partitions_on_shard.end()) {
-            total_size += pm_iter->second->cloud_log_size();
-        } else {
-            not_found.push_back(p);
-        }
-    }
+    struct reduce_res_type {
+        uint64_t total_size{0};
+        absl::flat_hash_map<ss::shard_id, std::vector<model::ntp>>
+          missing_partitions;
+    };
 
-    co_return get_partitions_cloud_storage_size_reply{
-      .size_bytes = total_size, .missing_partitions = std::move(not_found)};
+    reduce_res_type result = co_await _partition_manager.map_reduce0(
+      [&partitions = req.partitions](const partition_manager& pm) {
+          const auto& ntps_for_shard = partitions[ss::this_shard_id()];
+
+          std::vector<model::ntp> missing_partitions_on_shard;
+          uint64_t size_on_shard = 0;
+          for (const auto& ntp : ntps_for_shard) {
+              auto partition = pm.get(ntp);
+
+              if (!partition) {
+                  missing_partitions_on_shard.push_back(ntp);
+              } else {
+                  size_on_shard += partition->cloud_log_size();
+              }
+          }
+          return map_res_type{
+            .total_size = size_on_shard,
+            .missing_partitions = std::move(missing_partitions_on_shard),
+            .shard = ss::this_shard_id()};
+      },
+      reduce_res_type{},
+      [](reduce_res_type acc, map_res_type map_result) {
+          acc.total_size += map_result.total_size;
+          acc.missing_partitions[map_result.shard] = std::move(
+            map_result.missing_partitions);
+
+          return acc;
+      });
+
+    co_return get_partitions_cloud_storage_size_simple_reply{
+      .total_size_bytes = result.total_size,
+      .missing_partitions = std::move(result.missing_partitions)};
 }
 } // namespace cluster

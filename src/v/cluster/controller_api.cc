@@ -37,6 +37,7 @@ namespace cluster {
 
 controller_api::controller_api(
   model::node_id self,
+  ss::sharded<controller_stm>& stm,
   ss::sharded<controller_backend>& backend,
   ss::sharded<topic_table>& topics,
   ss::sharded<shard_table>& shard_table,
@@ -45,6 +46,7 @@ controller_api::controller_api(
   ss::sharded<members_table>& members,
   ss::sharded<ss::abort_source>& as)
   : _self(self)
+  , _stm(stm)
   , _backend(backend)
   , _topics(topics)
   , _shard_table(shard_table)
@@ -445,6 +447,31 @@ controller_api::shard_for(const raft::group_id& group) const {
     } else {
         return std::nullopt;
     }
+}
+
+bool controller_api::is_first_live_replica_for_ntp(
+  const model::ntp& ntp) const {
+    const auto assignments = _topics.local().get_partition_assignment(ntp);
+    if (!assignments) {
+        return false;
+    }
+
+    auto first_live_replica = std::find_if(
+      assignments->replicas.begin(),
+      assignments->replicas.end(),
+      [this](const model::broker_shard& replica) {
+          return _members.local().contains(replica.node_id);
+      });
+
+    return _self == first_live_replica->node_id;
+}
+
+std::optional<model::offset> controller_api::get_last_applied_offset() {
+    if (ss::this_shard_id() != controller_stm_shard) {
+        return std::nullopt;
+    }
+
+    return _stm.local().get_last_applied_offset();
 }
 
 } // namespace cluster

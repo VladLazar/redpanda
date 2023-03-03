@@ -358,4 +358,11 @@ get_allocation_domain(const model::ntp& ntp) {
     return get_allocation_domain(model::topic_namespace_view(ntp));
 }
 
+class cloud_storage_size_reduce {
+public:
+    cloud_storage_size_reduce();
+
+private:
+};
+
 } // namespace cluster
