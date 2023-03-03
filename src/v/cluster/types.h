@@ -2978,9 +2978,9 @@ struct cancel_partition_movements_reply
     std::vector<move_cancellation_result> partition_results;
 };
 
-struct get_partition_cloud_storage_size_request
+struct get_partitions_cloud_storage_size_request
   : serde::envelope<
-      get_partition_cloud_storage_size_request,
+      get_partitions_cloud_storage_size_request,
       serde::version<0>,
       serde::compat_version<0>> {
     using rpc_adl_exempt = std::true_type;
@@ -2988,16 +2988,16 @@ struct get_partition_cloud_storage_size_request
     std::vector<model::ntp> partitions;
 
     friend bool operator==(
-      const get_partition_cloud_storage_size_request&,
-      const get_partition_cloud_storage_size_request&)
+      const get_partitions_cloud_storage_size_request&,
+      const get_partitions_cloud_storage_size_request&)
       = default;
 
     auto serde_fields() { return std::tie(partitions); }
 };
 
-struct get_partition_cloud_storage_size_reply
+struct get_partitions_cloud_storage_size_reply
   : serde::envelope<
-      get_partition_cloud_storage_size_reply,
+      get_partitions_cloud_storage_size_reply,
       serde::version<0>,
       serde::compat_version<0>> {
     using rpc_adl_exempt = std::true_type;
@@ -3006,8 +3006,8 @@ struct get_partition_cloud_storage_size_reply
     std::vector<model::ntp> missing_partitions;
 
     friend bool operator==(
-      const get_partition_cloud_storage_size_reply&,
-      const get_partition_cloud_storage_size_reply&)
+      const get_partitions_cloud_storage_size_reply&,
+      const get_partitions_cloud_storage_size_reply&)
       = default;
 
     auto serde_fields() { return std::tie(size_bytes, missing_partitions); }
