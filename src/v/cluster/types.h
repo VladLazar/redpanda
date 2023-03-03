@@ -2978,6 +2978,41 @@ struct cancel_partition_movements_reply
     std::vector<move_cancellation_result> partition_results;
 };
 
+struct get_partition_cloud_storage_size_request
+  : serde::envelope<
+      get_partition_cloud_storage_size_request,
+      serde::version<0>,
+      serde::compat_version<0>> {
+    using rpc_adl_exempt = std::true_type;
+
+    std::vector<model::ntp> partitions;
+
+    friend bool operator==(
+      const get_partition_cloud_storage_size_request&,
+      const get_partition_cloud_storage_size_request&)
+      = default;
+
+    auto serde_fields() { return std::tie(partitions); }
+};
+
+struct get_partition_cloud_storage_size_reply
+  : serde::envelope<
+      get_partition_cloud_storage_size_reply,
+      serde::version<0>,
+      serde::compat_version<0>> {
+    using rpc_adl_exempt = std::true_type;
+
+    uint64_t size_bytes;
+    std::vector<model::ntp> missing_partitions;
+
+    friend bool operator==(
+      const get_partition_cloud_storage_size_reply&,
+      const get_partition_cloud_storage_size_reply&)
+      = default;
+
+    auto serde_fields() { return std::tie(size_bytes, missing_partitions); }
+};
+
 struct revert_cancel_partition_move_cmd_data
   : serde::envelope<
       revert_cancel_partition_move_cmd_data,
@@ -3027,10 +3062,11 @@ struct revert_cancel_partition_move_reply
 
 /**
  * Broker state transitions are coordinated centrally as opposite to
- * configuration which change is requested by the described node itself. Broker
- * state represents centrally managed node properties. The difference between
- * broker state and configuration is that the configuration change is made on
- * the node while state changes are managed by the cluster controller.
+ * configuration which change is requested by the described node itself.
+ * Broker state represents centrally managed node properties. The difference
+ * between broker state and configuration is that the configuration change
+ * is made on the node while state changes are managed by the cluster
+ * controller.
  */
 class broker_state
   : public serde::
@@ -3110,15 +3146,16 @@ struct node_decommission_progress {
 };
 
 /*
- * Partition Allocation Domains is the way to make certain partition replicas
- * distributed evenly across the nodes of the cluster. When partition allocation
- * is done within any domain but `common`, all existing allocations outside
- * of that domain will be ignored while assigning partition a node.
- * The `common` domain will consider allocations in all domains.
- * Negative values are used for hardcoded domains, positive values are reserved
- * for future use as user assigned domains, and may be used for a feature that
- * would allow users to designate certain topics to have their partition
- * replicas and leaders evenly distrbuted regardless of other topics.
+ * Partition Allocation Domains is the way to make certain partition
+ * replicas distributed evenly across the nodes of the cluster. When
+ * partition allocation is done within any domain but `common`, all existing
+ * allocations outside of that domain will be ignored while assigning
+ * partition a node. The `common` domain will consider allocations in all
+ * domains. Negative values are used for hardcoded domains, positive values
+ * are reserved for future use as user assigned domains, and may be used for
+ * a feature that would allow users to designate certain topics to have
+ * their partition replicas and leaders evenly distrbuted regardless of
+ * other topics.
  */
 using partition_allocation_domain
   = named_type<int32_t, struct partition_allocation_domain_tag>;

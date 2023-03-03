@@ -115,6 +115,11 @@ public:
     ss::future<transfer_leadership_reply> transfer_leadership(
       transfer_leadership_request&& r, rpc::streaming_context&) final;
 
+    ss::future<get_partition_cloud_storage_size_reply>
+    get_partition_cloud_storage_size(
+      get_partition_cloud_storage_size_request&& r,
+      rpc::streaming_context&) final;
+
 private:
     static constexpr auto default_move_interruption_timeout = 10s;
     std::
@@ -148,6 +153,10 @@ private:
     ss::future<cancel_partition_movements_reply>
       do_cancel_node_partition_movements(
         cancel_node_partition_movements_request);
+
+    ss::future<get_partition_cloud_storage_size_reply>
+      do_get_partition_cloud_storage_size(
+        get_partition_cloud_storage_size_request);
 
     ss::sharded<topics_frontend>& _topics_frontend;
     ss::sharded<members_manager>& _members_manager;

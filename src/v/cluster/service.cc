@@ -675,4 +675,31 @@ ss::future<transfer_leadership_reply> service::transfer_leadership(
     }
 }
 
+ss::future<get_partition_cloud_storage_size_reply>
+service::get_partition_cloud_storage_size(
+  get_partition_cloud_storage_size_request&& req, rpc::streaming_context&) {
+    return ss::with_scheduling_group(get_scheduling_group(), [this, req]() {
+        return do_get_partition_cloud_storage_size(req);
+    });
+}
+
+ss::future<get_partition_cloud_storage_size_reply>
+service::do_get_partition_cloud_storage_size(
+  get_partition_cloud_storage_size_request req) {
+    const auto& partitions_on_shard = _partition_manager.local().partitions();
+
+    uint64_t total_size = 0;
+    std::vector<model::ntp> not_found;
+    for (const auto& p : req.partitions) {
+        auto pm_iter = partitions_on_shard.find(p);
+        if (pm_iter != partitions_on_shard.end()) {
+            total_size += pm_iter->second->cloud_log_size();
+        } else {
+            not_found.push_back(p);
+        }
+    }
+
+    co_return get_partition_cloud_storage_size_reply{
+      .size_bytes = total_size, .missing_partitions = std::move(not_found)};
+}
 } // namespace cluster

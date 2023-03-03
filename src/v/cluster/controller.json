@@ -130,6 +130,11 @@
             "name": "transfer_leadership",
             "input_type": "transfer_leadership_request",
             "output_type": "transfer_leadership_reply"
+        },
+        {
+            "name": "get_partition_cloud_storage_size",
+            "input_type": "get_partition_cloud_storage_size_request",
+            "output_type": "get_partition_cloud_storage_size_reply"
         }
     ]
 }
