@@ -15,6 +15,7 @@
 #include "ssx/sformat.h"
 #include "storage/file_sanitizer_types.h"
 #include "storage/logger.h"
+#include "storage/segment_appender.h"
 #include "vassert.h"
 
 #include <seastar/core/file.hh>
@@ -77,6 +78,7 @@ public:
             output_pending_ops();
         }
     }
+
     file_io_sanitizer(const file_io_sanitizer&) = delete;
     file_io_sanitizer& operator=(const file_io_sanitizer&) = delete;
     file_io_sanitizer(file_io_sanitizer&& o) noexcept
@@ -94,6 +96,8 @@ public:
         return *this;
     }
 
+    void set_pointer_to_appender(segment_appender* ptr) { _appender_ptr = ptr; }
+
     ss::future<size_t> write_dma(
       uint64_t pos,
       const void* buffer,
@@ -104,9 +108,14 @@ public:
           ssx::sformat(
             "ss::future<size_t>::write_dma(pos:{}, *void, len:{})", pos, len),
           maybe_inject_failure(failable_op_type::write)
-            .then([this, pos, buffer, len, pc]() {
-                return get_file_impl(_file)->write_dma(pos, buffer, len, pc);
             .then([this, pos, buffer, len, &pc]() {
+                return get_file_impl(_file)
+                  ->write_dma(pos, buffer, len, pc)
+                  .finally([this]() {
+                      if (_appender_ptr) {
+                          _appender_ptr->reset_batch_types_to_write();
+                      }
+                  });
             }));
     }
 
@@ -121,9 +130,14 @@ public:
             pos,
             iov.size()),
           maybe_inject_failure(failable_op_type::write)
-            .then([this, pos, iov = std::move(iov), pc]() {
-                return get_file_impl(_file)->write_dma(pos, iov, pc);
             .then([this, pos, iov = std::move(iov), &pc]() {
+                return get_file_impl(_file)
+                  ->write_dma(pos, iov, pc)
+                  .finally([this]() {
+                      if (_appender_ptr) {
+                          _appender_ptr->reset_batch_types_to_write();
+                      }
+                  });
             }));
     }
 
@@ -272,13 +286,8 @@ private:
         }
 
         const auto& fail_cfgs = _config.finjection_cfg.value();
-
-        auto fail_cfg = std::find_if(
-          fail_cfgs.op_configs.begin(),
-          fail_cfgs.op_configs.end(),
-          [&op_type](auto& cfg) { return op_type == cfg.op_type; });
-
-        if (fail_cfg == fail_cfgs.op_configs.end()) {
+        const auto fail_cfg = find_failure_config(op_type, fail_cfgs);
+        if (!fail_cfg.has_value()) {
             return ss::make_ready_future<>();
         }
 
@@ -332,6 +341,70 @@ private:
         return f;
     }
 
+    std::optional<failable_op_config> find_failure_config(
+      failable_op_type op_type,
+      const ntp_failure_injection_config& ntp_config) const {
+        if (op_type != failable_op_type::write || _appender_ptr == nullptr) {
+            auto fail_cfg = std::find_if(
+              ntp_config.op_configs.begin(),
+              ntp_config.op_configs.end(),
+              [&op_type](auto& cfg) { return op_type == cfg.op_type; });
+
+            if (fail_cfg == ntp_config.op_configs.end()) {
+                return std::nullopt;
+            } else {
+                return *fail_cfg;
+            }
+        } else {
+            // This branch handles the case where op_type==write.
+            // Failure insertion for write operations supports batch
+            // granularity, so we iterate through all available failure
+            // configs and pick the highest chances of failure from
+            // all batch types queued for the write.
+
+            std::optional<failable_op_config> final_config;
+
+            for (const auto& fail_cfg : ntp_config.op_configs) {
+                if (fail_cfg.op_type != failable_op_type::write) {
+                    continue;
+                }
+
+                if (
+                  fail_cfg.batch_type
+                  && !is_batch_type_queued_in_appender(
+                    fail_cfg.batch_type.value())) {
+                    continue;
+                }
+
+                if (!final_config.has_value()) {
+                    final_config = fail_cfg;
+                } else {
+                    final_config->failure_probability = std::max(
+                      final_config->failure_probability,
+                      fail_cfg.failure_probability);
+
+                    if (
+                      final_config->delay_probability
+                      < fail_cfg.delay_probability) {
+                        final_config->delay_probability
+                          = fail_cfg.delay_probability;
+                        final_config->min_delay_ms = fail_cfg.min_delay_ms;
+                        final_config->max_delay_ms = fail_cfg.max_delay_ms;
+                    }
+                }
+            }
+
+            return final_config;
+        }
+    }
+
+    bool is_batch_type_queued_in_appender(
+      model::record_batch_type batch_type) const {
+        auto batch_types_for_next_write = _appender_ptr->batch_types_to_write();
+        return batch_types_for_next_write
+               & (1U << static_cast<uint8_t>(batch_type));
+    }
+
     void output_pending_ops() {
         std::cout << "  called from " << ss::current_backtrace();
         for (sanitizer_op& op : _pending_ops) {
@@ -355,6 +428,8 @@ private:
     ntp_sanitizer_config _config;
     std::optional<ss::saved_backtrace> _closed;
     std::optional<std::mt19937> _random_gen;
+
+    segment_appender* _appender_ptr{nullptr};
 };
 
 } // namespace storage

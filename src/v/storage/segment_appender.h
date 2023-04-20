@@ -183,6 +183,7 @@ private:
     uint32_t _batch_types_to_write{0};
 
     friend std::ostream& operator<<(std::ostream&, const segment_appender&);
+    friend class file_io_sanitizer;
 };
 
 using segment_appender_ptr = std::unique_ptr<segment_appender>;
