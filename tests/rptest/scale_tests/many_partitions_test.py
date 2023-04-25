@@ -21,7 +21,8 @@ from rptest.clients.rpk import RpkTool, RpkException
 from rptest.tests.prealloc_nodes import PreallocNodesTest
 from rptest.utils.si_utils import nodes_report_cloud_segments
 from rptest.services.rpk_consumer import RpkConsumer
-from rptest.services.redpanda import ResourceSettings, RESTART_LOG_ALLOW_LIST, SISettings, LoggingConfig, MetricsEndpoint
+from rptest.services.storage_failure_injection import FailureInjectionConfig, NTPFailureInjectionConfig, FailureConfig, NTP, Operation, BatchType
+from rptest.services.redpanda import RedpandaService, ResourceSettings, RESTART_LOG_ALLOW_LIST, FAILURE_INJECTION_LOG_ALLOW_LIST, SISettings, LoggingConfig, MetricsEndpoint
 from rptest.services.kgo_verifier_services import KgoVerifierProducer, KgoVerifierSeqConsumer, KgoVerifierRandomConsumer
 from rptest.services.kgo_repeater_service import KgoRepeaterService, repeater_traffic
 from rptest.services.openmessaging_benchmark import OpenMessagingBenchmark
@@ -876,6 +877,13 @@ class ManyPartitionsTest(PreallocNodesTest):
     def test_many_partitions(self):
         self._test_many_partitions(compacted=False)
 
+    @cluster(num_nodes=12,
+             log_allow_list=RESTART_LOG_ALLOW_LIST +
+             FAILURE_INJECTION_LOG_ALLOW_LIST)
+    def test_many_partitions_with_failure_injection(self):
+        self._test_many_partitions(compacted=False,
+                                   failure_injection_enabled=True)
+
     @ok_to_fail  # https://github.com/redpanda-data/redpanda/issues/8777
     @cluster(num_nodes=12, log_allow_list=RESTART_LOG_ALLOW_LIST)
     @matrix(compacted=[False])  # FIXME: run with compaction
@@ -892,7 +900,49 @@ class ManyPartitionsTest(PreallocNodesTest):
         # peak partition count.
         self._run_omb(scale)
 
-    def _test_many_partitions(self, compacted, tiered_storage_enabled=False):
+    def _generate_failure_injection_config(
+            self, topic_names, partitions_per_topic) -> FailureInjectionConfig:
+        failure_probability = 0.0001
+        delay_probability = 10
+        min_delay_ms = 10
+        max_delay_ms = 30
+
+        failure_configs = [
+            FailureConfig(operation=op,
+                          failure_probability=failure_probability,
+                          delay_probability=delay_probability,
+                          min_delay_ms=min_delay_ms,
+                          max_delay_ms=max_delay_ms) for op in Operation
+        ]
+
+        ntps: list[NTP] = []
+        ntps.append(NTP(namespace="redpanda", topic="controller", partition=0))
+
+        # Each shard gets its own kvstore ntp. The servers on which the test is running
+        # will have less than 64 cores, but having failure configuration for non-existing
+        # partitions is not an issue.
+        for shard in range(64):
+            ntps.append(NTP(namespace="redpanda", topic="kvstore",
+                            partition=0))
+
+        for topic in topic_names:
+            ntps += [
+                NTP(topic=topic, partition=p)
+                for p in range(partitions_per_topic)
+            ]
+
+        ntp_failure_configs = [
+            NTPFailureInjectionConfig(ntp=ntp, failure_configs=failure_configs)
+            for ntp in ntps
+        ]
+
+        return FailureInjectionConfig(seed=0,
+                                      ntp_failure_configs=ntp_failure_configs)
+
+    def _test_many_partitions(self,
+                              compacted,
+                              tiered_storage_enabled=False,
+                              failure_injection_enabled=False):
         """
         Validate that redpanda works with partition counts close to its resource
         limits.
@@ -954,10 +1004,28 @@ class ManyPartitionsTest(PreallocNodesTest):
             int(scale.expect_bandwidth / len(self.redpanda.nodes) * 3)
         })
 
-        self.redpanda.start(parallel=True)
+        topic_names = [f"scale_{i:06d}" for i in range(0, n_topics)]
+
+        node_overrides = {}
+        if failure_injection_enabled == True:
+            fail_config = self._generate_failure_injection_config(
+                topic_names, n_partitions)
+            tmp_file = "/tmp/failure_injection_config.json"
+            fail_config.write_to_file(tmp_file)
+            self.redpanda.nodes[0].account.copy_to(
+                tmp_file, RedpandaService.FAILURE_INJECTION_CONFIG_PATH)
+
+            node_overrides[self.redpanda.nodes[0]] = {
+                "storage_failure_injection_enabled":
+                True,
+                "storage_failure_injection_config_path":
+                RedpandaService.FAILURE_INJECTION_CONFIG_PATH
+            }
+
+        self.redpanda.start(parallel=True,
+                            node_config_overrides=node_overrides)
 
         self.logger.info("Entering topic creation")
-        topic_names = [f"scale_{i:06d}" for i in range(0, n_topics)]
         for tn in topic_names:
             self.logger.info(
                 f"Creating topic {tn} with {n_partitions} partitions")

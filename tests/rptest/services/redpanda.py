@@ -95,6 +95,10 @@ RESTART_LOG_ALLOW_LIST = [
     re.compile("Error \"raft::errc:19\" on replicating"),
 ]
 
+FAILURE_INJECTION_LOG_ALLOW_LIST = [
+    "Assert failure: .* filesystem error: Injected Failure: Input/output error"
+]
+
 # Log errors that are expected in chaos-style tests that e.g.
 # stop redpanda nodes uncleanly
 CHAOS_LOG_ALLOW_LIST = [
@@ -881,6 +885,7 @@ class RedpandaService(RedpandaServiceBase):
     BACKTRACE_CAPTURE = os.path.join(PERSISTENT_ROOT, "redpanda_backtrace.log")
     COVERAGE_PROFRAW_CAPTURE = os.path.join(PERSISTENT_ROOT,
                                             "redpanda.profraw")
+    FAILURE_INJECTION_CONFIG_PATH = "/etc/redpanda/failure_injection_config.json"
 
     DEFAULT_NODE_READY_TIMEOUT_SEC = 20
 
