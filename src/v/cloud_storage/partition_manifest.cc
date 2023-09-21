@@ -2580,6 +2580,13 @@ void partition_manifest::process_anomalies(
         return meta.next_kafka_offset() <= first_kafka_offset;
     });
 
+    auto& segment_meta_anomalies
+      = _detected_anomalies.segment_metadata_anomalies;
+    erase_if(
+      segment_meta_anomalies, [&first_kafka_offset](const auto& anomaly_meta) {
+          return anomaly_meta.at.next_kafka_offset() <= first_kafka_offset;
+      });
+
     _last_partition_scrub = scrub_timestamp;
 }
 

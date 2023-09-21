@@ -52,13 +52,18 @@ public:
 
     ss::future<result> run(retry_chain_node&);
 
+    static void scrub_segment_meta(
+      const segment_meta& current,
+      const std::optional<segment_meta>& previous,
+      anomalies& detected);
+
+private:
     ss::future<anomalies_detector::result> download_and_check_spill_manifest(
       const ss::sstring& path, retry_chain_node& rtc_node);
 
     ss::future<anomalies_detector::result> check_manifest(
       const partition_manifest& manifest, retry_chain_node& rtc_node);
 
-private:
     cloud_storage_clients::bucket_name _bucket;
     model::ntp _ntp;
     model::initial_revision_id _initial_rev;
@@ -66,6 +71,9 @@ private:
     remote& _remote;
     retry_chain_logger& _logger;
     ss::abort_source& _as;
+
+    std::optional<segment_meta> _last_segment_scrubbed;
+    // TODO: keep track of last scrubbed manifest
 };
 
 } // namespace cloud_storage

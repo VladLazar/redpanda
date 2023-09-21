@@ -112,6 +112,69 @@ anomalies_detector::run(retry_chain_node& rtc_node) {
     co_return final_res;
 }
 
+void anomalies_detector::scrub_segment_meta(
+  const segment_meta& current,
+  const std::optional<segment_meta>& next,
+  anomalies& detected) {
+    // After one segment has a delta offset, all subsequent segments
+    // should have a delta offset too.
+    if (
+      next && next->delta_offset == model::offset_delta{}
+      && current.delta_offset != model::offset_delta{}) {
+        detected.segment_metadata_anomalies.insert(
+          anomaly_meta{.type = anomaly_type::missing_delta, .at = *next});
+    }
+
+    // The delta offset field of a segment should always be greater or
+    // equal to that of the previous one.
+    if (
+      next && next->delta_offset != model::offset_delta{}
+      && current.delta_offset != model::offset_delta{}
+      && current.delta_offset > next->delta_offset) {
+        detected.segment_metadata_anomalies.insert(anomaly_meta{
+          .type = anomaly_type::non_monotonical_delta,
+          .at = current,
+          .next = next});
+    }
+
+    // The committed offset of a segment should always be greater or equal
+    // to the base offset.
+    if (current.committed_offset < current.base_offset) {
+        detected.segment_metadata_anomalies.insert(
+          anomaly_meta{.type = anomaly_type::committed_smaller, .at = current});
+    }
+
+    // The end delta offset of a segment should always be greater or equal
+    // to the base delta offset.
+    if (
+      current.delta_offset != model::offset_delta{}
+      && current.delta_offset_end != model::offset_delta{}
+      && current.delta_offset_end < current.delta_offset) {
+        detected.segment_metadata_anomalies.insert(
+          anomaly_meta{.type = anomaly_type::end_delta_smaller, .at = current});
+    }
+
+    // The base offset of a given segment should be equal to the committed
+    // offset of the previous segment plus one. Otherwise, if the base offset is
+    // greater, we have a gap in the log.
+    if (
+      next
+      && model::next_offset(current.committed_offset) < next->base_offset) {
+        detected.segment_metadata_anomalies.insert(anomaly_meta{
+          .type = anomaly_type::offset_gap, .at = current, .next = next});
+    }
+
+    // The base offset of a given segment should be equal to the committed
+    // offset of the previous segment plus one. Otherwise, if the base offset is
+    // lower, we have overlapping segments in the log.
+    if (
+      next
+      && model::next_offset(current.committed_offset) > next->base_offset) {
+        detected.segment_metadata_anomalies.insert(anomaly_meta{
+          .type = anomaly_type::offset_overlap, .at = current, .next = next});
+    }
+}
+
 ss::future<anomalies_detector::result>
 anomalies_detector::download_and_check_spill_manifest(
   const ss::sstring& path, retry_chain_node& rtc_node) {
@@ -145,6 +208,7 @@ ss::future<anomalies_detector::result> anomalies_detector::check_manifest(
 
     vlog(_logger.debug, "Checking manifest {}", manifest.get_manifest_path());
 
+    // TODO: implement rbegin() or work around it
     for (auto seg_iter = manifest.begin(); seg_iter != manifest.end();
          ++seg_iter) {
         if (_as.abort_requested()) {
@@ -152,13 +216,15 @@ ss::future<anomalies_detector::result> anomalies_detector::check_manifest(
             co_return res;
         }
 
-        auto segment_path = manifest.generate_segment_path(*seg_iter);
-        auto exists_result = co_await _remote.segment_exists(
+        const auto seg_meta = *seg_iter;
+
+        const auto segment_path = manifest.generate_segment_path(seg_meta);
+        const auto exists_result = co_await _remote.segment_exists(
           _bucket, segment_path, rtc_node);
         res.ops += 1;
 
         if (exists_result == download_result::notfound) {
-            res.detected.missing_segments.emplace(*seg_iter);
+            res.detected.missing_segments.emplace(seg_meta);
         } else if (exists_result != download_result::success) {
             vlog(
               _logger.debug,
@@ -167,6 +233,13 @@ ss::future<anomalies_detector::result> anomalies_detector::check_manifest(
 
             res.status = scrub_status::partial;
         }
+
+        scrub_segment_meta(seg_meta, _last_segment_scrubbed, res.detected);
+        _last_segment_scrubbed = seg_meta;
+        vlog(
+          _logger.info,
+          "Last segment scrubbed start offset: {}",
+          _last_segment_scrubbed->base_offset);
     }
 
     vlog(

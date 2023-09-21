@@ -116,6 +116,12 @@ scrubber::run(retry_chain_node& rtc_node, run_quota_t quota) {
       "Scrub finished with status {} and detected {}",
       detect_result.status,
       detect_result.detected);
+    const auto& offset_anomalies
+      = detect_result.detected.segment_metadata_anomalies;
+    for (const auto& a : offset_anomalies) {
+        vlog(_logger.info, "Offset anomaly: {}", a);
+    }
+
     auto replicate_result = co_await _archiver.process_anomalies(
       model::timestamp::now(),
       detect_result.status,
